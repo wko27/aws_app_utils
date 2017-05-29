@@ -1,0 +1,56 @@
+#!/bin/bash
+# SSH into an EC2 instance for the given
+
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
+
+help_text() {
+    echo "Usage:"
+    echo "  sshaws (service)"
+    echo "    - ssh into an EC2 instance for the given service"
+    exit 0
+}
+
+if [[ $# -eq 0 ]]; then
+    serviceRoot=$( pwd -P )
+elif [[ $# -eq 1 ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+	help_text
+    fi
+    serviceRoot="$( cd $1 && pwd -P )"
+fi
+
+service="$( basename $serviceRoot )"
+
+if [[ ! -d "$service" ]]; then
+    ssh -i "~/.ssh/messaging.pem" "ec2-user@$1"
+    exit 0
+fi
+
+loadServiceProperties "$serviceRoot"
+
+checkVariableSet "AUTO_SCALING_GROUP"
+checkVariableSet "EC2_KEYPAIR"
+
+instances=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$AUTO_SCALING_GROUP_NAME" | jq '.AutoScalingGroups | .[0] | .Instances' )
+if [[ "$( echo $instances | jq 'length' )" -gt 0 ]]; then
+    instanceId=$( echo "$instances" | jq -r '[ .[] | select(.LifecycleState == "InService") ] | .[0] | .InstanceId' )
+    if [[ "$instanceId" == "null" ]]; then
+        echo "-- Found an instance attached to auto scaling group, but it is not currently in service ... please check manually!"
+	echo
+	echo "$instances"
+        exit 1
+    fi
+    echo "-- Found instance $instanceId"
+    dns=$( aws ec2 describe-instances --instance-ids "$instanceId" | jq -r '.Reservations | .[0] | .Instances | .[0] | .NetworkInterfaces | .[0] | .Association | .PublicDnsName' )
+    if [[ -z $dns ]]; then
+	echo "No public DNS name found for $instanceId"
+	exit 1
+    fi
+    echo "-- Opening ssh session into $dns"
+    ssh -i "~/.ssh/$EC2_KEYPAIR_NAME.pem" "ec2-user@$dns"
+else
+    echo "-- No instance attached to auto scaling group"
+    exit 1
+fi

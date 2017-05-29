@@ -1,0 +1,48 @@
+#!/bin/bash
+# Deletes AWS resources for an application
+
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
+set -e # Abort on error
+set -u # Abort on undeclared variable
+
+help_text() {
+    echo "Usage:"
+    echo "  deleteApplication"
+    echo "    - deletes all configurations/resources for the given application"
+    exit 0
+}
+
+if [[ $# -ge 1 && ( "$1" = "-h" || "$1" == "--help" ) ]]; then
+    help_text
+fi
+
+applicationRoot="$( findApplicationRoot )"
+loadApplicationProperties "$applicationRoot"
+
+affirm "-- Are you sure you want to delete all AWS resources associated with application: $APPLICATION_NAME (at $applicationRoot)?"
+
+echo "-- Checking if IAM instance profile $IAM_ROLE_NAME exists"
+iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$IAM_ROLE_NAME" )
+if [[ "$iamInstanceProfileExists" = "false" ]]; then
+    echo "---- No IAM instance profile $IAM_ROLE_NAME found"
+else
+    echo "---- Detaching role from instancne profile"
+    aws iam remove-role-from-instance-profile --instance-profile-name "$IAM_ROLE_NAME" --role-name "$IAM_ROLE_NAME"
+    
+    echo "---- Deleting IAM instance profile $IAM_ROLE_NAME"
+    aws iam delete-instance-profile --instance-profile-name "$IAM_ROLE_NAME"
+fi
+
+echo "-- Checking if IAM role $IAM_ROLE_NAME exists"
+iamRoleExists=$( isExitSuccess aws iam get-role --role-name "$IAM_ROLE_NAME" )
+if [[ "$iamRoleExists" = "false" ]]; then
+    echo "---- No IAM role $IAM_ROLE_NAME found"
+else
+    echo "---- Detaching Code Deploy managed policy from role"
+    aws iam detach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
+    
+    echo "---- Deleting IAM role $IAM_ROLE_NAME"
+    aws iam delete-role --role-name "$IAM_ROLE_NAME"
+fi
+
+echo "-- All resources for application $APPLICATION_NAME are released (except EC2 keypair in ~/.ssh/$EC2_KEYPAIR_NAME.pem)"

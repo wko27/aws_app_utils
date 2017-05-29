@@ -1,0 +1,56 @@
+#!/bin/bash
+# Create a new service (backed by an EC2 instance)
+
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
+
+help_text() {
+    echo "Usage:"
+    echo "  newService"
+    echo "    - creates a new service (will prompt for name)"
+    echo "  newService (service name)"
+    echo "    - creates a new service with the given name"
+    echo "  newService --help"
+    echo "    - show this help text"
+    echo "  newService --help"
+    echo "    - show this help text"
+    exit 0
+}
+
+applicationRoot=$( findApplicationRoot )
+
+if [[ $# -eq 0 ]]; then
+    service=$( prompt "Service name: " )
+elif [[ $# -eq 1 ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+	help_text
+    fi
+    service="$1"
+else
+    help_text
+    exit 0
+fi
+
+serviceRoot="$applicationRoot/services/$service"
+
+if [[ -d "$serviceRoot" ]]; then
+    echo "-- Found service already exists at $serviceRoot"
+elif [[ -f "$serviceRoot" ]]; then
+    echo "-- Unable to create service at $serviceRoot, please remove $serviceRoot file and retry"
+else
+    echo "-- Creating new service at $serviceRoot"
+    mkdir -p "$serviceRoot"
+fi
+
+if [[ -e "$serviceRoot/aws.properties" ]]; then
+    echo "---- Found existing aws.properties in $serviceRoot"
+else
+    echo "---- Creating service's aws.properties"
+    cat "$BIN_DIR/../templates/service/aws.properties" | sed "s|__SERVICE__|$service|g" | sed "s|__APPLICATION_ROOT__|$applicationRoot|g" > "$serviceRoot/aws.properties"
+    cp -r "$BIN_DIR/../templates/service/codedeploy" "$serviceRoot/"
+fi
+
+affirm "-- Configure AWS (including an EC2 instance) now?"
+
+configureService "$service"

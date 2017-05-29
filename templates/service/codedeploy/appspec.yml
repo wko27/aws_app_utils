@@ -1,0 +1,21 @@
+version: 0.0
+os: linux
+files:
+  - source: /
+    destination: /home/ec2-user/service
+hooks:
+  ApplicationStop:
+    - location: scripts/stop_service.sh
+      runas: ec2-user
+  BeforeInstall:
+    - location: scripts/cleanup.sh
+      timeout: 300
+      runas: root
+  AfterInstall:
+    - location: scripts/setup.sh
+      timeout: 300
+      runas: root
+  ApplicationStart:
+    - location: scripts/start_service.sh
+      runas: ec2-user
+

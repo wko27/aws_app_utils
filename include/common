@@ -1,0 +1,118 @@
+#!/bin/bash
+# Utility functions for scripts in bin directory
+
+if ! brew ls --versions awscli > /dev/null; then
+    brew install awscli
+fi
+
+isExitSuccess() {
+    set +e
+    $@1> /dev/null 2>&1
+    if [[ $? -eq 0 ]]; then
+	echo "true"
+    else
+	echo "false"
+    fi
+    set -e
+}
+
+prompt() {
+    while true; do
+	echo -n "$1" >&2
+	read -r response
+	if [[ -n $response ]]; then
+	    echo $response
+	    return 0
+	fi
+	echo "---- Invalid response '$response'" 1>&2
+    done
+}
+
+promptWithOptions() {
+    display="$1"
+    shift
+    args=$@
+    options=$( echo "$args" | sed 's/ /, /g' )
+    while true; do
+	echo -n "$display ($options): " 1>&2
+	read -r response
+	if echo "$args" | tr ' ' '\n' | grep -q "$response"; then
+	    echo "$response"
+	    break
+	fi
+    done
+}
+
+affirm() {
+    if [[ $# -ne 0 ]]; then
+	echo "$1"
+    fi
+    read -p "---- [Enter to continue, ctrl-c to abort]"
+}
+
+checkVariableSet() {
+    if [ -z ${1+x} ]; then
+	echo "$1 is not set"
+	exit 1
+    fi
+}
+
+# Load values from the application-level aws.property
+loadApplicationProperties() {
+    applicationRoot="$1"
+
+    if [[ ! -e "$applicationRoot/aws.properties" ]]; then
+	echo "No aws.properties found in $applicationRoot"
+	exit 1
+    fi
+
+    source "$applicationRoot/aws.properties"
+    
+    checkVariableSet "APPLICATION_NAME"
+    checkVariableSet "EC2_KEYNAME"
+    checkVariableSet "ZONE"
+    checkVariableSet "IAM_ROLE_NAME"
+    checkVariableSet "DEFAULT_SECURITY_GROUP"
+}
+
+# Load values from the service-level aws.property (and its corresponding application-level aws.property)
+loadServiceProperties() {
+    serviceRoot="$1"
+
+    if [[ ! -e "$serviceRoot/aws.properties" ]]; then
+	echo "No aws.properties found in $serviceRoot"
+	exit 1
+    fi
+    
+    source "$serviceRoot/aws.properties"
+    
+    checkVariableSet "CODE_DEPLOY_APPLICATION_NAME"
+    checkVariableSet "DEPLOYMENT_GROUP_NAME"
+    checkVariableSet "AUTO_SCALING_GROUP"
+    checkVariableSet "SECURITY_GROUP_NAME"
+    checkVariableSet "SECURITY_GROUP_RULE"
+    checkVariableSet "CODE_DEPLOY_S3_BUCKET_NAME"
+    checkVariableSet "CODE_DEPLOY_S3_BUCKET_KEY"
+
+    checkVariableSet "APPLICATION_ROOT"
+    loadApplicationProperties "$APPLICATION_ROOT"
+}
+
+# Find the application root, i.e. the first ancestor directory containing an application-type aws.properties
+# Prints the name or errors out if it can not be found
+findApplicationRoot() {
+    current=$( pwd -P )
+    while [[ "$current" != "/" ]]; do
+	awsProperties="$current/aws.properties"
+	if [[ -e "$awsProperties" ]]; then
+	    if grep -q "### application aws.properties" "$awsProperties"; then
+		echo "$current"
+		return 0
+	    fi
+	fi
+	current=$( cd "$current/.." && pwd -P )
+    done
+    echo "---- Could not find a parent directory with an application aws.properties" 1>&2
+    echo "---- Are you not in a valid repository?" 1>&2
+    exit 1
+}

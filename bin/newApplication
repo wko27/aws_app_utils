@@ -1,0 +1,51 @@
+#!/bin/bash
+# Create a new application
+
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
+
+help_text() {
+    echo "Usage:"
+    echo "  newApplication"
+    echo "    - creates a new application (will prompt for name)"
+    echo "  newApplication (application name)"
+    echo "    - creates a new application with the given name"
+    echo "  newApplication -h"
+    echo "    - displays this help text"
+    echo "  newApplication --help"
+    echo "    - displays this help text"
+    exit 0
+}
+
+if [[ $# -eq 0 ]]; then
+    application=$( prompt "Application name: " )
+elif [[ $# -eq 1 ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+	help_text
+    fi
+    application="$1"
+else
+    help_text
+    exit 0
+fi
+
+applicationRoot="$( pwd -P )/$application"
+
+if [[ -d "$applicationRoot" ]]; then
+    echo "-- Found application already exists at $applicationRoot"
+elif [[ -f "$applicationRoot" ]]; then
+    echo "-- Unable to create application at $applicationRoot, please remove $applicationRoot file and retry"
+else
+    echo "-- Creating new application at $applicationRoot"
+    mkdir -p "$applicationRoot/services"
+fi
+
+if [[ -e "$applicationRoot/aws.properties" ]]; then
+    echo "---- Found existing aws.properties in $applicationRoot"
+else
+    echo "---- Creating application's aws.properties"
+    cat "$BIN_DIR/../templates/application/aws.properties" | sed "s/__APPLICATION__/$application/g" > "$applicationRoot/aws.properties"
+fi
+
+cd "$applicationRoot" && configureApplication

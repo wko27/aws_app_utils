@@ -1,0 +1,138 @@
+#!/bin/bash
+# Deletes AWS resources for a service
+
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
+set -e # Abort on error
+set -u # Abort on undeclared variable
+
+help_text() {
+    echo "Usage:"
+    echo "  deleteService (service)"
+    echo "    - deletes all configurations/resources for the given service"
+    exit 0
+}
+
+if [[ $# -eq 0 ]]; then
+    serviceRoot=$( pwd -P )
+elif [[ $# -eq 1 ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+	help_text
+    fi
+    serviceRoot="$( cd $1 && pwd -P )"
+fi
+
+service=$( basename "$serviceRoot" )
+loadServiceProperties "$serviceRoot"
+
+affirm "---- Delete all AWS resources for service $service at $serviceRoot?"
+
+echo "-- Checking if auto scaling group $AUTO_SCALING_GROUP_NAME exists"
+autoScalingGroupExists="$( aws autoscaling describe-auto-scaling-groups | jq '.AutoScalingGroups | any(.AutoScalingGroupName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
+if [[ "$autoScalingGroupExists" = "false" ]]; then
+    echo "---- No auto scaling group $AUTO_SCALING_GROUP_NAME found"
+else
+    echo "---- Setting min-size of auto scaling group $AUTO_SCALING_GROUP_NAME to 0"
+    aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 0
+    
+    echo "---- Finding instances attached to group"
+    instances=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names ParserGroup | jq -r '.AutoScalingGroups | .[0] | .Instances | map( .InstanceId ) | join(" ")' )
+    if [[ -n "$instances" ]]; then
+	echo "---- Detaching instances: $instances"
+	for instanceId in $instances; do
+	    echo "---- Detaching $instanceId"
+	    aws autoscaling detach-instances --instance-ids "$instanceId" --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --should-decrement-desired-capacity
+	done
+	
+	echo "---- Waiting for instances to fully detach"
+	while true; do
+	    anyAttached=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names ParserGroup | jq -r '.AutoScalingGroups | .[0] | .Instances | any' )
+	    if [[ "$anyAttached" = "false" ]]; then
+		break;
+	    fi
+	    
+	    sleep 3
+	done
+    fi
+    
+    echo "---- Deleting auto scaling group $AUTO_SCALING_GROUP_NAME"
+    aws autoscaling delete-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME"
+fi
+
+echo "-- Checking if launch configuration $AUTO_SCALING_GROUP_NAME exists"
+launchConfigurationExists="$( aws autoscaling describe-launch-configurations | jq '.LaunchConfigurations | any(.LaunchConfigurationName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
+if [[ "$launchConfigurationExists" = "false" ]]; then
+    echo "---- No launch configuration $AUTO_SCALING_GROUP_NAME found"
+else
+    echo "---- Deleting launch configuration $AUTO_SCALING_GROUP_NAME"
+    aws autoscaling delete-launch-configuration --launch-configuration-name "$AUTO_SCALING_GROUP_NAME"
+fi
+
+echo "-- Checking EC2 instances attached to security group $SECURITY_GROUP_NAME"
+instances=$( aws ec2 describe-instances --filters "Name=instance.group-name,Values=$SECURITY_GROUP_NAME" | jq -r '[ .Reservations | .[] | .Instances | .[] | .InstanceId ] | join(" ")' )
+if [[ -z "$instances" ]]; then
+    echo "---- No EC2 instances found"
+else
+    echo "---- Terminating instances: $instances"
+    for instanceId in $instances; do
+	aws ec2 terminate-instances --instance-ids "$instanceId"
+    done
+    
+    echo "---- Waiting for instances to terminate: $instances"
+    while true; do
+	instanceStates=$( aws ec2 describe-instances --instance-ids $instances | jq -r '[ .Reservations | .[] | .Instances | .[] | { InstanceId: .InstanceId, State: .State.Name } ]' )
+	terminated=$( echo "$instanceStates" | jq -r 'all( .State == "terminated" )' )
+	if [[ "$terminated" = "true" ]]; then
+	    break;
+	else
+	    echo "$instanceStates" | jq -r 'map( .InstanceId + ":" + .State )'
+	fi
+	sleep 3
+    done
+fi
+
+echo "-- Checking if security group $SECURITY_GROUP_NAME exists"
+securityGroupExists="$( aws ec2 describe-security-groups | jq '.SecurityGroups | any(.GroupName == "'"$SECURITY_GROUP_NAME"'")' )"
+if [[ "$securityGroupExists" = "false" ]]; then
+    echo "---- No security group $SECURITY_GROUP_NAME found"
+else
+    echo "---- Deleting security group $SECURITY_GROUP_NAME"
+    aws ec2 delete-security-group --group-name "$SECURITY_GROUP_NAME"
+fi
+
+codeDeployApplicationExists="$( aws deploy list-applications | jq '.applications | any(. == "'"$CODE_DEPLOY_APPLICATION_NAME"'")' )"
+if [[ "$codeDeployApplicationExists" = "false" ]]; then
+    echo "---- No code deploy application $CODE_DEPLOY_APPLICATION_NAME found"
+else
+    echo "---- Deleting code deploy application $CODE_DEPLOY_APPLICATION_NAME"
+    aws deploy delete-application --application-name "$CODE_DEPLOY_APPLICATION_NAME"
+fi
+
+#######################################################
+# Now sanity check that everything was deleted properly
+#######################################################
+
+autoScalingGroupExists="$( aws autoscaling describe-auto-scaling-groups | jq '.AutoScalingGroups | any(.AutoScalingGroupName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
+if [[ "$autoScalingGroupExists" = "true" ]]; then
+    echo "---- Failed to delete auto scaling group $AUTO_SCALING_GROUP_NAME"
+    exit -1
+fi
+
+launchConfigurationExists="$( aws autoscaling describe-launch-configurations | jq '.LaunchConfigurations | any(.LaunchConfigurationGroupName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
+if [[ "$launchConfigurationExists" = "true" ]]; then
+    echo "---- Failed to delete launch configuration $AUTO_SCALING_GROUP_NAME"
+    exit -1
+fi
+
+securityGroupExists="$( aws ec2 describe-security-groups | jq '.SecurityGroups | any(.GroupName == "'"$SECURITY_GROUP_NAME"'")' )"
+if [[ "$securityGroupExists" = "true" ]]; then
+    echo "---- Failed to delete security group $SECURITY_GROUP_NAME"
+    exit -1
+fi
+
+codeDeployApplicationExists="$( aws deploy list-applications | jq '.applications | any(. == "'"$CODE_DEPLOY_APPLICATION_NAME"'")' )"
+if [[ "$codeDeployApplicationExists" = "true" ]]; then
+    echo "---- Failed to delete code deploy application $CODE_DEPLOY_APPLICATION_NAME"
+    exit -1
+fi
+
+echo "-- All resources for service $service are released"

@@ -1,0 +1,62 @@
+#!/bin/bash
+# Configures AWS resources for an application
+
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
+
+help_text() {
+    echo "Usage:"
+    echo "  configureApplication"
+    echo "    - verifies and configures AWS entities for the application"
+    echo "  configureApplication -h"
+    echo "    - displays this help text"
+    echo "  configureApplication -h"
+    echo "    - displays this help text"
+    exit 0
+}
+
+if [[ $# -eq 0 ]]; then
+    applicationRoot=$( findApplicationRoot )
+else
+    help_text
+fi
+
+echo "-- Configuring AWS for $applicationRoot"
+
+loadApplicationProperties "$applicationRoot"
+
+echo "-- Checking if SSH key pair $EC2_KEYPAIR_NAME exists"
+if [[ -e ~/.ssh/"$EC2_KEYPAIR_NAME".pem ]]; then
+    echo "---- Keypair $EC2_KEYPAIR_NAME already exists in ~/.ssh"
+else
+    echo "---- Creating new keypair $EC2_KEYPAIR_NAME"
+    aws ec2 create-key-pair --key-name "$EC2_KEYPAIR_NAME" > ~/.ssh/"$EC2_KEYPAIR_NAME".pem
+fi
+
+echo "-- Checking if IAM role $IAM_ROLE_NAME exists"
+iamRoleExists=$( isExitSuccess aws iam get-role --role-name "$IAM_ROLE_NAME" )
+if [[ "$iamRoleExists" = "true" ]]; then
+    echo "---- IAM role $IAM_ROLE_NAME already exists"
+else
+    echo "---- Creating IAM role $IAM_ROLE_NAME"
+    aws iam create-role --role-name "$IAM_ROLE_NAME" --assume-role-policy-document "file://$BIN_DIR/../templates/application/role-policy.json" --description "IAM role for $APPLICATION_NAME"
+
+    echo "---- Attaching AWS Code Deploy policy to role"
+    aws iam attach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
+fi
+
+echo "-- Checking if IAM instance profile $IAM_ROLE_NAME exists"
+
+iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$IAM_ROLE_NAME" )
+if [[ "$iamInstanceProfileExists" = "true" ]]; then
+    echo "---- IAM instance profile $IAM_ROLE_NAME already exists"
+else
+    echo "---- Creating IAM instance profile $IAM_ROLE_NAME"
+    aws iam create-instance-profile --instance-profile-name "$IAM_ROLE_NAME"
+    
+    echo "---- Attaching role to instance profile"
+    aws iam add-role-to-instance-profile --instance-profile-name "$IAM_ROLE_NAME" --role-name "$IAM_ROLE_NAME"
+fi
+
+echo "-- Application configured!"

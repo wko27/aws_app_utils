@@ -1,0 +1,93 @@
+#!/bin/bash
+# Handles build and deployment of services to AWS
+
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
+
+help_text() {
+    echo "Usage:"
+    echo "  deployService (path to service)"
+    echo "    - uploads build directory to S3, and code deploys to the EC2 instance for the given service"
+    echo "  deployService"
+    echo "    - uploads build directory to S3, and code deploys to the EC2 instance for the service in the current directory"
+    echo "  deployService -h"
+    echo "    - displays this help text"
+    echo "  deployService --help"
+    echo "    - displays this help text"
+    exit 0
+}
+
+if [[ $# -eq 0 ]]; then
+    serviceRoot=$( pwd -P )
+elif [[ $# -eq 1 ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+	help_text
+    fi
+    serviceRoot="$1"
+fi
+
+service=$( basename "$serviceRoot" )
+
+loadServiceProperties "$service"
+
+CODE_DEPLOY_S3_BUCKET="s3://$CODE_DEPLOY_S3_BUCKET_NAME"
+PROJECT_NAME=$( cd "$service" && basename "$( pwd )" )
+CODE_DEPLOY_S3_BUCKET_KEY="$CODE_DEPLOY_APPLICATION_NAME"
+CODE_DEPLOY_S3_TARGET="$CODE_DEPLOY_S3_BUCKET/$CODE_DEPLOY_S3_BUCKET_KEY"
+
+echo "-- Running verifications"
+
+echo "---- Checking deploy bucket exists: $CODE_DEPLOY_S3_BUCKET"
+aws s3 ls "$CODE_DEPLOY_S3_BUCKET"
+
+echo "---- Checking application exists: $CODE_DEPLOY_APPLICATION_NAME"
+aws deploy get-application --application-name "$CODE_DEPLOY_APPLICATION_NAME"
+
+echo "---- Checking deployment group exists: $DEPLOYMENT_GROUP_NAME"
+aws deploy get-deployment-group --application-name "$CODE_DEPLOY_APPLICATION_NAME" --deployment-group-name "$DEPLOYMENT_GROUP_NAME"
+
+echo "-- Making temp directory"
+BUILD_DIR=$( mktemp -d )
+
+echo "-- Copying $service/build/output/$PROJECT_NAME to temp directory $BUILD_DIR"
+cp -r "$service/build/output/$PROJECT_NAME/" "$BUILD_DIR"
+
+echo "-- Copying appspec and scripts from _scripts/aws/ to temp directory $BUILD_DIR"
+cp -r _scripts/codedeploy/* "$BUILD_DIR/"
+
+size=$( du -sh "$BUILD_DIR" | awk '{print $1}' )
+echo "-- Build directory size is $size"
+
+echo "-- Uploading to $CODE_DEPLOY_S3_TARGET (this could take a while)"
+uploadStart=$( date +%s )
+aws deploy push --application-name "$CODE_DEPLOY_APPLICATION_NAME" --s3-location "$CODE_DEPLOY_S3_TARGET" --source "$BUILD_DIR" --ignore-hidden-files
+uploadEnd=$( date +%s )
+uploadTime=$( echo $(( $uploadEnd - $uploadStart)) | awk '{print int($1/60)"m "int($1%60)"s"}' )
+echo "-- Upload completed in $uploadTime"
+
+echo "-- Obtaining eTag from latest build pushed to $CODE_DEPLOY_S3_TARGET"
+eTag=$( aws s3api head-object --bucket "$CODE_DEPLOY_S3_BUCKET_NAME" --key "$CODE_DEPLOY_S3_BUCKET_KEY" | jq -r .ETag | tr -d '"' )
+echo "---- Latest eTag is $eTag"
+
+echo "-- Submitting deploy request"
+deploymentOutput=$( aws deploy create-deployment --application-name "$CODE_DEPLOY_APPLICATION_NAME" --s3-location bucket="$CODE_DEPLOY_S3_BUCKET_NAME",key="$CODE_DEPLOY_S3_BUCKET_KEY",bundleType=zip,eTag="$eTag" --deployment-group-name "$DEPLOYMENT_GROUP_NAME" )
+if [[ $? -ne 0 ]]; then
+    echo $deploymentOutput
+    exit 1
+fi
+
+deploymentId=$( echo $deploymentOutput | jq -r .deploymentId )
+while true; do
+    status=$( aws deploy get-deployment --deployment-id "$deploymentId" | jq -r '.deploymentInfo | .status' )
+    printf "\rStatus: %20s" "$status"
+    
+    if [[ "$status" = "Succeeded" || "$status" = "Failed" ]]; then
+	echo
+	break
+    fi
+    
+    sleep 3
+done
+
+echo "Deployment finished, status: $status"

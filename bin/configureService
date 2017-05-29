@@ -1,0 +1,255 @@
+#!/bin/bash
+# Configures AWS resources for a service
+
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
+
+help_text() {
+    echo "Usage:"
+    echo "  configureService (path to service)"
+    echo "    - verifies and configures AWS entities for the given service"
+    echo "  configureService"
+    echo "    - verifies and configures AWS entities for the service in the current directory"
+    echo "  configureService -h"
+    echo "    - show this help text"
+    echo "  configureService --help"
+    echo "    - show this help text"
+    exit 0
+}
+
+if [[ $# -eq 0 ]]; then
+    serviceRoot=$( pwd -P )
+elif [[ $# -eq 1 ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+	help_text
+    fi
+    serviceRoot="$( cd $1 && pwd -P )"
+fi
+
+service=$( basename "$serviceRoot" )
+
+loadServiceProperties "$serviceRoot"
+
+# Create an AWS instance
+# Sets the instanceId variable to the created instance's id
+createInstance() {
+    echo "-- Creating an EC2 instance"
+    set +x
+    launchResult=$( aws ec2 run-instances --image-id "ami-5ec1673e" --count 1 --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --placement "AvailabilityZone=$ZONE" --security-groups "$SECURITY_GROUP_NAME" "$DEFAULT_SECURITY_GROUP" --iam-instance-profile Name="$IAM_ROLE_NAME")
+    if [[ $? -ne 0 ]]; then
+	echo "$launchResult"
+	echo "Failed to launch new ec2 instance!"
+	exit 1
+    fi
+    
+    instanceId=$( echo "$launchResult" | jq -r '.Instances | .[0] | .InstanceId' )
+    echo "---- Created instance $instanceId"
+    
+    echo "-- Checking instance status"
+    while true; do
+	instanceStatus=$( aws ec2 describe-instance-status --instance-ids "$instanceId" | jq -r '.InstanceStatuses | .[0] | .InstanceState | .Name' )
+	echo "---- Instance $instanceId has status $instanceStatus"
+	if [[ "$instanceStatus" = "running" ]]; then
+	    break;
+	fi
+	sleep 3
+    done
+}
+
+# Update an instance
+updateInstance() {
+    instanceId="$1"
+    echo "-- Obtaining public DNS of the instance"
+    dnsName=$( aws ec2 describe-instances --instance-ids "$instanceId" | jq -r '.Reservations | .[0] | .Instances | .[0] | .NetworkInterfaces | .[0] | .Association | .PublicDnsName' )
+    echo "---- Public DNS for $instanceId is $dnsName"
+    
+    echo "-- Checking if instance $instanceId is reachable via $dnsName"
+    while true; do
+	checkDNS=$( runRemote "$dnsName" "ls" )
+	if [[ $? -eq 0 ]]; then
+	    break
+	fi
+	
+	if [[ ! "$checkDNS" =~ "Connection refused" ]]; then
+	    echo "---- Failed to reach instance and didn't get a Connection refused"
+	    echo "---- Something's weird, check it manually!"
+	    echo "$checkDNS"
+	    exit 1
+	fi
+	
+	echo "-- Connection refused"
+    done
+    
+    echo "-- Updating packages and installing emacs"
+    runRemote "$dnsName" "sudo yum update -y"
+    runRemote "$dnsName" "sudo yum install emacs -y"
+    
+    echo "-- Checking CodeDeploy agent on $instanceId ($dnsName)"
+    set +e # allow this command to fail if the codedeploy-agent is missing
+    agentStatus=$( runRemote "$dnsName" "sudo service codedeploy-agent status" )
+    set -e
+    
+    if [[ "$agentStatus" =~ "agent is running" ]]; then
+	echo "---- CodeDeploy agent is running"
+    elif [[ "$agentStatus" =~ "unrecognized service" ]]; then
+	echo "---- Installing CodeDeploy agent on $instanceId ($dnsName)"
+	runRemote "$dnsName" "wget https://aws-codedeploy-us-west-2.s3.amazonaws.com/latest/install && chmod +x install && sudo ./install auto && rm install"
+	agentStatus=$( runRemote "$dnsName" "sudo service codedeploy-agent status" )
+	if [[ ! "$agentStatus" =~ "agent is running" ]]; then
+	    echo "---- Failed to install CodeDeploy agent, please install manually"
+	    exit 1
+	fi
+    else
+	echo "Error attempting to check CodeDeploy agent, resolve manually!"
+	echo "$agentStatus"
+	exit 1
+    fi
+    
+    echo "-- Checking Java version"
+    if runRemote "$dnsName" "java -version 2>&1 | head -n 1 | grep -q 1.7"; then
+	echo "-- Installing Java 8, removing Java 7, and setting Java 8 to default"
+	runRemote "$dnsName" "sudo yum -y install java-1.8.0 && sudo yum -y remove java-1.7.0-openjdk && sudo /usr/sbin/alternatives --set java /usr/lib/jvm/jre-1.8.0-openjdk.x86_64/bin/java"
+    fi
+}
+
+# Run a script on a remote SSH server
+runRemote() {
+    ssh -o StrictHostKeyChecking=no -i ~/.ssh/"$EC2_KEYPAIR_NAME".pem "ec2-user@$1" "$2" 2>&1
+}
+
+echo "-- Starting configuration for $service"
+
+if [[ ! -e ~/.ssh/"$EC2_KEYPAIR_NAME".pem ]]; then
+    echo "-- Missing ~/.ssh/$EC2_KEYPAIR_NAME.pem!"
+    echo "-- Aborting"
+    exit 1
+fi
+
+echo "-- Checking if code deploy application $CODE_DEPLOY_APPLICATION_NAME exists"
+codeDeployApplicationExists="$( aws deploy list-applications | jq '.applications | any(. == "'"$CODE_DEPLOY_APPLICATION_NAME"'")' )"
+if [[ "$codeDeployApplicationExists" = "false" ]]; then
+    echo "---- Code deploy application does not exist, creating!"
+    aws deploy create-application --application-name "$CODE_DEPLOY_APPLICATION_NAME"
+    if [[ $? -ne 0 ]]; then
+	echo "---- Failed to create code deploy application"
+	exit 1
+    fi
+#    arn:aws:iam::395742631145:role/service_deployer
+else
+    echo "---- Code deploy application $CODE_DEPLOY_APPLICATION_NAME already exists"
+fi
+
+echo "-- Checking if deployment group $DEPLOYMENT_GROUP_NAME exists"
+deploymentGroupExists=$( aws deploy list-deployment-groups --application-name "$CODE_DEPLOY_APPLICATION_NAME" | jq '.deploymentGroups | any(. == "'"$DEPLOYMENT_GROUP_NAME"'")' )
+if [[ "$deploymentGroupExists" = "false" ]]; then
+    echo "---- Deployment group $DEPLOYMENT_GROUP_NAME does not exist, creating!"
+    serviceRoleArn=$( aws iam get-role --role-name "$IAM_ROLE_NAME" | jq -r '.Role | .Arn' )
+    aws deploy create-deployment-group --application-name "$CODE_DEPLOY_APPLICATION_NAME" --deployment-group-name "$DEPLOYMENT_GROUP_NAME" --service-role-arn "$serviceRoleArn"
+    if [[ $? -ne 0 ]]; then
+	echo "---- Failed to create deployment group"
+	exit 1
+    fi
+else
+    echo "---- Deployment group $DEPLOYMENT_GROUP_NAME already exists"
+fi
+
+echo "-- Checking if security group $SECURITY_GROUP_NAME exists"
+securityGroupExists="$( aws ec2 describe-security-groups | jq '.SecurityGroups | any(.GroupName == "'"$SECURITY_GROUP_NAME"'")' )"
+if [[ "$securityGroupExists" = "false" ]]; then
+    echo "---- Security group $SECURITY_GROUP_NAME does not exist, creating!"
+    aws ec2 create-security-group --group-name "$SECURITY_GROUP_NAME" --description "Security group for $AUTO_SCALING_GROUP_NAME"
+    if [[ $? -ne 0 ]]; then
+	echo "---- Failed to create security group"
+	exit 1
+    fi
+    
+    if [[ -n "$SECURITY_GROUP_RULE" ]]; then
+	echo "---- Adding rules to security group: $SECURITY_GROUP_RULE"
+	aws ec2 authorize-security-group-ingress --group-name "$SECURITY_GROUP_NAME" $SECURITY_GROUP_RULE
+	if [[ $? -ne 0 ]]; then
+	    echo "---- Failed to add ingress rules to security group"
+	    exit 1
+	fi
+    fi
+else
+    echo "---- Security group $SECURITY_GROUP_NAME already exists"
+fi
+
+echo "-- Checking existing EC2 instances in security group $SECURITY_GROUP_NAME"
+# Obtain the instances as a newline delimited list of instance ids
+instances=$( aws ec2 describe-instances --filters "Name=instance.group-name,Values=$SECURITY_GROUP_NAME" | jq -r '[ .Reservations | .[] | .Instances | .[] | .InstanceId ] | join(" ")' )
+numInstances=$( echo "$instances" | tr ' ' '\n' | sed '/^$/d' | wc -l | tr -d ' ' )
+if [[ $numInstances -eq 0 ]]; then
+    echo "---- No EC2 instance exists in security group $SECURITY_GROUP_NAME"
+    createInstance
+    instances=$( aws ec2 describe-instances --filters "Name=instance.group-name,Values=$SECURITY_GROUP_NAME" | jq -r '.Reservations | map(.Instances) | .[] | map(.InstanceId) | .[]' | paste -s -d ' ' - )
+    numInstances=$( echo "$instances" | tr ' ' '\n' | wc -l | tr -d ' ')
+    if [[ $numInstances -eq 0 ]]; then
+	echo "---- Failed to create EC2 instance!"
+	exit 1
+    fi
+else
+    echo "---- Found $numInstances EC2 instances: $instances"
+fi
+
+echo "-- Checking if auto scaling group $AUTO_SCALING_GROUP_NAME exists"
+autoScalingGroupExists="$( aws autoscaling describe-auto-scaling-groups | jq '.AutoScalingGroups | any(.AutoScalingGroupName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
+if [[ "$autoScalingGroupExists" = "false" ]]; then
+    echo "---- Auto scaling group $AUTO_SCALING_GROUP_NAME does not exist!"
+    
+    echo "---- Checking if launch configuration $AUTO_SCALING_GROUP_NAME exists"
+    launchConfigurationExists=$( aws autoscaling describe-launch-configurations --launch-configuration-names "$AUTO_SCALING_GROUP_NAME" | jq -r '.LaunchConfigurations | any' )
+    if [[ "$launchConfigurationExists" = true ]]; then
+	echo "---- Found launch configuration $AUTO_SCALING_GROUP_NAME, deleting it"
+	aws autoscaling delete-launch-configuration --launch-configuration-name "$AUTO_SCALING_GROUP_NAME"
+    else
+	echo "---- No launch configuration $AUTO_SCALING_GROUP_NAME exists"
+    fi
+    
+    instanceId=$( echo "$instances" | cut -d ' ' -f 1 )
+    echo "---- Creating auto scaling group $AUTO_SCALING_GROUP_NAME and a new launch configuration based on $instanceId"
+    aws autoscaling create-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 1 --max-size 2 --desired-capacity 1 --availability-zones "$ZONE" --instance-id "$instanceId"
+else
+    echo "---- Auto scaling group $AUTO_SCALING_GROUP_NAME already exists"
+    aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 1 --max-size "$numInstances"
+fi
+
+echo "---- Checking if instances are already assigned to auto scaling group"
+assignedInstances=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$AUTO_SCALING_GROUP_NAME" | jq '.AutoScalingGroups | .[0] | .Instances' )
+echo "Checking instances: $instances"
+for instanceId in $instances; do
+    if echo "$assignedInstances" | grep -q "$instanceId"; then
+	echo "---- Instance $instanceId is already assigned to auto scaling group"
+    else
+	echo "---- Attaching instance $instanceId to auto scaling group"
+	aws autoscaling attach-instances --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --instance-ids "$instanceId"
+    fi
+done
+
+echo "-- Checking status of instances in auto scaling group"
+while true; do
+    instanceStates=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$AUTO_SCALING_GROUP_NAME" | jq '.AutoScalingGroups | .[0] | .Instances' )
+    if [[ "$( echo $instanceStates | jq 'length' )" -eq 0 ]]; then
+	echo "-- No EC2 instances attached to auto scaling group (which is odd since we just attached them) ... please check manually!"
+	exit 1
+    fi
+
+    inService=$( echo "$instanceStates" | jq -r 'all(.LifecycleState == "InService")' )
+    if [[ "$inService" = "true" ]]; then
+	echo "---- All instances are in service"
+	break;
+    else
+	echo "-- Auto scaling group $AUTO_SCALING_GROUP_NAME instance state:"
+	echo "$instanceStates" | jq -r 'map(.InstanceId + ":" + .LifecycleState)'
+    fi
+    
+    sleep 3
+done
+
+for instanceId in $instances; do
+    echo "-- Updating instance $instanceId"
+    updateInstance "$instanceId"
+done
+
+echo "-- Service $service is configured!"
