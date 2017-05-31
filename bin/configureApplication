@@ -31,7 +31,16 @@ if [[ -e ~/.ssh/"$EC2_KEYPAIR_NAME".pem ]]; then
     echo "---- Keypair $EC2_KEYPAIR_NAME already exists in ~/.ssh"
 else
     echo "---- Creating new keypair $EC2_KEYPAIR_NAME"
-    aws ec2 create-key-pair --key-name "$EC2_KEYPAIR_NAME" > ~/.ssh/"$EC2_KEYPAIR_NAME".pem
+    newKey=$( aws ec2 create-key-pair --key-name "$EC2_KEYPAIR_NAME" )
+    echo "Created:"
+    echo "$newKey"
+    echo "$newKey" | jq -r '.KeyMaterial' > ~/.ssh/"$EC2_KEYPAIR_NAME".pem
+fi
+
+echo "---- Checking if keypair has correct read/write permissions"
+if [[ $( stat -f %A ~/.ssh/"$EC2_KEYPAIR_NAME".pem ) != "400" ]]; then
+    echo "---- Setting permissions to 400 on keypair"
+    chmod 400 ~/.ssh/"$EC2_KEYPAIR_NAME".pem
 fi
 
 echo "-- Checking if IAM role $IAM_ROLE_NAME exists"
@@ -47,7 +56,6 @@ else
 fi
 
 echo "-- Checking if IAM instance profile $IAM_ROLE_NAME exists"
-
 iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$IAM_ROLE_NAME" )
 if [[ "$iamInstanceProfileExists" = "true" ]]; then
     echo "---- IAM instance profile $IAM_ROLE_NAME already exists"
@@ -57,6 +65,19 @@ else
     
     echo "---- Attaching role to instance profile"
     aws iam add-role-to-instance-profile --instance-profile-name "$IAM_ROLE_NAME" --role-name "$IAM_ROLE_NAME"
+fi
+
+echo "-- Checking if default security group $APPLICATION_SECURITY_GROUP_NAME exists"
+applicationSecurityGroupExists=$( isExitSuccess aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" )
+if [[ "$applicationSecurityGroupExists" = "false" ]]; then
+    echo "---- Security group $APPLICATION_SECURITY_GROUP_NAME does not exist, creating!"
+    aws ec2 create-security-group --group-name "$APPLICATION_SECURITY_GROUP_NAME" --description "SSH access to $APPLICATION_NAME EC2 instances"
+    
+    applicationSecurityGroupId=$( aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
+    echo "---- Adding rules to allow SSH access to EC2 instances created with security group $APPLICATION_SECURITY_GROUP_NAME"
+    aws ec2 authorize-security-group-ingress --group-id "$applicationSecurityGroupId" --protocol tcp --port 22
+else
+    echo "---- Security group $APPLICATION_SECURITY_GROUP_NAME already exists"
 fi
 
 echo "-- Application configured!"

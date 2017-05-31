@@ -34,9 +34,11 @@ loadServiceProperties "$serviceRoot"
 # Create an AWS instance
 # Sets the instanceId variable to the created instance's id
 createInstance() {
-    echo "-- Creating an EC2 instance"
-    set +x
-    launchResult=$( aws ec2 run-instances --image-id "ami-5ec1673e" --count 1 --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --placement "AvailabilityZone=$ZONE" --security-groups "$SECURITY_GROUP_NAME" "$DEFAULT_SECURITY_GROUP" --iam-instance-profile Name="$IAM_ROLE_NAME")
+    echo "-- Creating an EC2 instance with security groups '$SECURITY_GROUP_NAME' and '$APPLICATION_SECURITY_GROUP_NAME'"
+    securityGroupId=$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
+    applicationSecurityGroupId=$( aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
+    
+    launchResult=$( aws ec2 run-instances --image-id "ami-5ec1673e" --count 1 --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --placement "AvailabilityZone=$ZONE" --security-group-ids "$securityGroupId" "$applicationSecurityGroupId" --iam-instance-profile Name="$IAM_ROLE_NAME")
     if [[ $? -ne 0 ]]; then
 	echo "$launchResult"
 	echo "Failed to launch new ec2 instance!"
@@ -64,7 +66,8 @@ updateInstance() {
     dnsName=$( aws ec2 describe-instances --instance-ids "$instanceId" | jq -r '.Reservations | .[0] | .Instances | .[0] | .NetworkInterfaces | .[0] | .Association | .PublicDnsName' )
     echo "---- Public DNS for $instanceId is $dnsName"
     
-    echo "-- Checking if instance $instanceId is reachable via $dnsName"
+    echo "---- Checking if instance $instanceId is reachable via $dnsName"
+    set +e
     while true; do
 	checkDNS=$( runRemote "$dnsName" "ls" )
 	if [[ $? -eq 0 ]]; then
@@ -72,7 +75,7 @@ updateInstance() {
 	fi
 	
 	if [[ ! "$checkDNS" =~ "Connection refused" ]]; then
-	    echo "---- Failed to reach instance and didn't get a Connection refused"
+	    echo "---- Failed to reach instance and didn't get a 'Connection refused'"
 	    echo "---- Something's weird, check it manually!"
 	    echo "$checkDNS"
 	    exit 1
@@ -80,6 +83,7 @@ updateInstance() {
 	
 	echo "-- Connection refused"
     done
+    set -e
     
     echo "-- Updating packages and installing emacs"
     runRemote "$dnsName" "sudo yum update -y"
@@ -155,7 +159,7 @@ else
 fi
 
 echo "-- Checking if security group $SECURITY_GROUP_NAME exists"
-securityGroupExists="$( aws ec2 describe-security-groups | jq '.SecurityGroups | any(.GroupName == "'"$SECURITY_GROUP_NAME"'")' )"
+securityGroupExists="$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq '.SecurityGroups | any' )"
 if [[ "$securityGroupExists" = "false" ]]; then
     echo "---- Security group $SECURITY_GROUP_NAME does not exist, creating!"
     aws ec2 create-security-group --group-name "$SECURITY_GROUP_NAME" --description "Security group for $AUTO_SCALING_GROUP_NAME"
@@ -165,10 +169,11 @@ if [[ "$securityGroupExists" = "false" ]]; then
     fi
     
     if [[ -n "$SECURITY_GROUP_RULE" ]]; then
+	securityGroupId=$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
 	echo "---- Adding rules to security group: $SECURITY_GROUP_RULE"
-	aws ec2 authorize-security-group-ingress --group-name "$SECURITY_GROUP_NAME" $SECURITY_GROUP_RULE
+	aws ec2 authorize-security-group-ingress --group-id "$securityGroupId" $SECURITY_GROUP_RULE
 	if [[ $? -ne 0 ]]; then
-	    echo "---- Failed to add ingress rules to security group"
+	    echo "---- Failed to add ingress rules to security group $SECURITY_GROUP_NAME (with id $securityGroupId)"
 	    exit 1
 	fi
     fi
@@ -209,10 +214,10 @@ if [[ "$autoScalingGroupExists" = "false" ]]; then
     
     instanceId=$( echo "$instances" | cut -d ' ' -f 1 )
     echo "---- Creating auto scaling group $AUTO_SCALING_GROUP_NAME and a new launch configuration based on $instanceId"
-    aws autoscaling create-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 1 --max-size 2 --desired-capacity 1 --availability-zones "$ZONE" --instance-id "$instanceId"
+    aws autoscaling create-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 0 --max-size 2 --desired-capacity 1 --availability-zones "$ZONE" --instance-id "$instanceId"
 else
     echo "---- Auto scaling group $AUTO_SCALING_GROUP_NAME already exists"
-    aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 1 --max-size "$numInstances"
+    aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 0 --max-size "$numInstances"
 fi
 
 echo "---- Checking if instances are already assigned to auto scaling group"

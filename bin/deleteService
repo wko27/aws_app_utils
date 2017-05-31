@@ -24,7 +24,7 @@ fi
 service=$( basename "$serviceRoot" )
 loadServiceProperties "$serviceRoot"
 
-affirm "---- Delete all AWS resources for service $service at $serviceRoot?"
+affirm "---- Delete all AWS resources for service $service at $serviceRoot"
 
 echo "-- Checking if auto scaling group $AUTO_SCALING_GROUP_NAME exists"
 autoScalingGroupExists="$( aws autoscaling describe-auto-scaling-groups | jq '.AutoScalingGroups | any(.AutoScalingGroupName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
