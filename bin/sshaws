@@ -23,11 +23,6 @@ fi
 
 service="$( basename $serviceRoot )"
 
-if [[ ! -d "$service" ]]; then
-    ssh -i "~/.ssh/messaging.pem" "ec2-user@$1"
-    exit 0
-fi
-
 loadServiceProperties "$serviceRoot"
 
 checkVariableSet "AUTO_SCALING_GROUP"

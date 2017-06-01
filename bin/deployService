@@ -29,10 +29,9 @@ fi
 
 service=$( basename "$serviceRoot" )
 
-loadServiceProperties "$service"
+loadServiceProperties "$serviceRoot"
 
 CODE_DEPLOY_S3_BUCKET="s3://$CODE_DEPLOY_S3_BUCKET_NAME"
-PROJECT_NAME=$( cd "$service" && basename "$( pwd )" )
 CODE_DEPLOY_S3_BUCKET_KEY="$CODE_DEPLOY_APPLICATION_NAME"
 CODE_DEPLOY_S3_TARGET="$CODE_DEPLOY_S3_BUCKET/$CODE_DEPLOY_S3_BUCKET_KEY"
 
@@ -50,11 +49,11 @@ aws deploy get-deployment-group --application-name "$CODE_DEPLOY_APPLICATION_NAM
 echo "-- Making temp directory"
 BUILD_DIR=$( mktemp -d )
 
-echo "-- Copying $service/build/output/$PROJECT_NAME to temp directory $BUILD_DIR"
-cp -r "$service/build/output/$PROJECT_NAME/" "$BUILD_DIR"
+echo "-- Copying $LOCAL_BUILD_DIR to temp directory $BUILD_DIR"
+cp -r "$serviceRoot/$LOCAL_BUILD_DIR" "$BUILD_DIR"
 
 echo "-- Copying appspec and scripts from _scripts/aws/ to temp directory $BUILD_DIR"
-cp -r _scripts/codedeploy/* "$BUILD_DIR/"
+cp -r "$serviceRoot"/codedeploy/* "$BUILD_DIR/"
 
 size=$( du -sh "$BUILD_DIR" | awk '{print $1}' )
 echo "-- Build directory size is $size"
@@ -71,6 +70,7 @@ eTag=$( aws s3api head-object --bucket "$CODE_DEPLOY_S3_BUCKET_NAME" --key "$COD
 echo "---- Latest eTag is $eTag"
 
 echo "-- Submitting deploy request"
+echo "---- If things are stuck, take a peek at /var/log/aws/codedeploy-agent/codedeploy-agent.log on the instance"
 deploymentOutput=$( aws deploy create-deployment --application-name "$CODE_DEPLOY_APPLICATION_NAME" --s3-location bucket="$CODE_DEPLOY_S3_BUCKET_NAME",key="$CODE_DEPLOY_S3_BUCKET_KEY",bundleType=zip,eTag="$eTag" --deployment-group-name "$DEPLOYMENT_GROUP_NAME" )
 if [[ $? -ne 0 ]]; then
     echo $deploymentOutput

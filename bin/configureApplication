@@ -30,6 +30,13 @@ echo "-- Checking if SSH key pair $EC2_KEYPAIR_NAME exists"
 if [[ -e ~/.ssh/"$EC2_KEYPAIR_NAME".pem ]]; then
     echo "---- Keypair $EC2_KEYPAIR_NAME already exists in ~/.ssh"
 else
+    numKeyPairs=$( aws ec2 describe-key-pairs | jq -r '.KeyPairs | length' )
+    echo "---- You currently have $numKeyPairs registered keypairs"
+    if [[ $numKeyPairs -ge 5000 ]]; then
+	echo "---- Exceeding max number of allowed keypairs!  Please remove one and retry"
+	exit 1
+    fi
+    
     echo "---- Creating new keypair $EC2_KEYPAIR_NAME"
     newKey=$( aws ec2 create-key-pair --key-name "$EC2_KEYPAIR_NAME" )
     echo "Created:"
@@ -52,7 +59,10 @@ else
     aws iam create-role --role-name "$IAM_ROLE_NAME" --assume-role-policy-document "file://$BIN_DIR/../templates/application/role-policy.json" --description "IAM role for $APPLICATION_NAME"
 
     echo "---- Attaching AWS Code Deploy policy to role"
-    aws iam attach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
+#    aws iam attach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+#    aws iam attach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+#    aws iam attach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSCodeDeployDeployerAccess"
+    aws iam put-role-policy --role-name "$IAM_ROLE_NAME" --policy-name "CodeDeployPolicy" --policy-document "file://$BIN_DIR/../templates/application/inline-policy.json"
 fi
 
 echo "-- Checking if IAM instance profile $IAM_ROLE_NAME exists"
@@ -78,6 +88,15 @@ if [[ "$applicationSecurityGroupExists" = "false" ]]; then
     aws ec2 authorize-security-group-ingress --group-id "$applicationSecurityGroupId" --protocol tcp --port 22
 else
     echo "---- Security group $APPLICATION_SECURITY_GROUP_NAME already exists"
+fi
+
+echo "-- Checking if S3 bucket $CODE_DEPLOY_S3_BUCKET_NAME exists"
+codeDeployS3BucketExists=$( isExitSuccess aws s3api head-bucket --bucket "$CODE_DEPLOY_S3_BUCKET_NAME" )
+if [[ "$codeDeployS3BucketExists" = "false" ]]; then
+    echo "---- S3 bucket $CODE_DEPLOY_S3_BUCKET_NAME does not exist, creating!"
+    aws s3 mb "s3://$CODE_DEPLOY_S3_BUCKET_NAME" --region $( aws configure get region )
+else
+    echo "---- S3 bucket $CODE_DEPLOY_S3_BUCKET_NAME already exists"
 fi
 
 echo "-- Application configured!"
