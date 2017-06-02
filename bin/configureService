@@ -114,7 +114,7 @@ else
     aws iam attach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
 fi
 
-echo "-- Checking if IAM instance profile $EC2_IAM_ROLE_NAME exists"
+echo "-- Checking if IAM instance profile $EC2_IAM_PROFILE_NAME exists"
 iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$EC2_IAM_PROFILE_NAME" )
 if [[ "$iamInstanceProfileExists" = "true" ]]; then
     echo "---- IAM instance profile $EC2_IAM_PROFILE_NAME already exists"
@@ -143,7 +143,7 @@ echo "-- Checking if deployment group $DEPLOYMENT_GROUP_NAME exists"
 deploymentGroupExists=$( aws deploy list-deployment-groups --application-name "$CODE_DEPLOY_APPLICATION_NAME" | jq '.deploymentGroups | any(. == "'"$DEPLOYMENT_GROUP_NAME"'")' )
 if [[ "$deploymentGroupExists" = "false" ]]; then
     echo "---- Deployment group $DEPLOYMENT_GROUP_NAME does not exist, creating!"
-    serviceRoleArn=$( aws iam get-role --role-name "DEPLOYER_IAM_ROLE_NAME" | jq -r '.Role | .Arn' )
+    serviceRoleArn=$( aws iam get-role --role-name "$DEPLOYER_IAM_ROLE_NAME" | jq -r '.Role | .Arn' )
     aws deploy create-deployment-group --application-name "$CODE_DEPLOY_APPLICATION_NAME" --deployment-group-name "$DEPLOYMENT_GROUP_NAME" --service-role-arn "$serviceRoleArn"
     if [[ $? -ne 0 ]]; then
 	echo "---- Failed to create deployment group"
@@ -154,7 +154,7 @@ else
 fi
 
 echo "-- Checking if security group $SECURITY_GROUP_NAME exists"
-securityGroupExists="$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq '.SecurityGroups | any' )"
+securityGroupExists=$( isExitSuccess aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" )
 if [[ "$securityGroupExists" = "false" ]]; then
     echo "---- Security group $SECURITY_GROUP_NAME does not exist, creating!"
     aws ec2 create-security-group --group-name "$SECURITY_GROUP_NAME" --description "Security group for $AUTO_SCALING_GROUP_NAME"
@@ -180,17 +180,11 @@ echo "-- Checking existing EC2 instances in security group $SECURITY_GROUP_NAME"
 # Obtain the instances as a newline delimited list of instance ids
 instances=$( aws ec2 describe-instances --filters "Name=instance.group-name,Values=$SECURITY_GROUP_NAME" | jq -r '[ .Reservations | .[] | .Instances | .[] | .InstanceId ] | join(" ")' )
 numInstances=$( echo "$instances" | tr ' ' '\n' | sed '/^$/d' | wc -l | tr -d ' ' )
+createInstances=false
 if [[ $numInstances -eq 0 ]]; then
     echo "---- No EC2 instance exists in security group $SECURITY_GROUP_NAME"
-#    createInstance
-#    instances=$( aws ec2 describe-instances --filters "Name=instance.group-name,Values=$SECURITY_GROUP_NAME" | jq -r '.Reservations | map(.Instances) | .[] | map(.InstanceId) | .[]' | paste -s -d ' ' - )
-#    numInstances=$( echo "$instances" | tr ' ' '\n' | wc -l | tr -d ' ')
-#    if [[ $numInstances -eq 0 ]]; then
-#	echo "---- Failed to create EC2 instance!"
-#	exit 1
-#    fi
 else
-    echo "---- Found $numInstances EC2 instances: $instances"
+    echo "---- Found $numInstances EC2 instance(s): $instances"
 fi
 
 echo "-- Checking if launch configuration $AUTO_SCALING_GROUP_NAME exists"
@@ -211,7 +205,13 @@ if [[ "$autoScalingGroupExists" = "false" ]]; then
     
     instanceId=$( echo "$instances" | cut -d ' ' -f 1 )
     echo "---- Creating auto scaling group $AUTO_SCALING_GROUP_NAME with launch configuration $AUTO_SCALING_GROUP_NAME"
-    aws autoscaling create-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 0 --max-size "$numInstances" --desired-capacity "0" --availability-zones "$ZONE" --launch-configuration-name "$AUTO_SCALING_GROUP_NAME"
+    
+    if [[ $numInstances -eq 0 ]]; then
+	numInstances=1
+	createInstances=true
+    fi
+    
+    aws autoscaling create-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 0 --max-size "$numInstances" --desired-capacity "$numInstances" --availability-zones "$ZONE" --launch-configuration-name "$AUTO_SCALING_GROUP_NAME"
 else
     echo "---- Auto scaling group $AUTO_SCALING_GROUP_NAME already exists"
     aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 0 --max-size "$numInstances"
@@ -226,9 +226,9 @@ else
     echo "---- Auto scaling group $AUTO_SCALING_GROUP_NAME already attached to deployment group"
 fi
 
-echo "---- Checking if instances are already assigned to auto scaling group"
+echo "-- Checking if instances are already assigned to auto scaling group $AUTO_SCALING_GROUP_NAME"
 assignedInstances=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$AUTO_SCALING_GROUP_NAME" | jq '.AutoScalingGroups | .[0] | .Instances' )
-echo "Checking instances: $instances"
+echo "-- Checking instances: $instances"
 for instanceId in $instances; do
     if echo "$assignedInstances" | grep -q "$instanceId"; then
 	echo "---- Instance $instanceId is already assigned to auto scaling group"
@@ -238,15 +238,27 @@ for instanceId in $instances; do
     fi
 done
 
-echo "-- Checking status of instances in auto scaling group (if they didn't deploy properly, peek at /var/log/cloud-init-output.log)"
-while true; do
+echo "-- Checking if auto scaling group is deploying new instances"
+if [[ "$createInstances" = "true" ]]; then
+    echo "---- Waiting for autoscaling group to start creating instances"
+    while true; do
+	started=$( aws autoscaling describe-scaling-activities --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" | jq -r '.Activities | any' )
+	if [[ "$started" = "true" ]]; then
+	    break
+	fi
+	sleep 3
+    done
+fi    
+
+echo "-- Checking status of instances in auto scaling group $AUTO_SCALING_GROUP_NAME (if they didn't deploy properly, peek at /var/log/cloud-init-output.log)"
+while true; do    
     instanceStates=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$AUTO_SCALING_GROUP_NAME" | jq '.AutoScalingGroups | .[0] | .Instances' )
     if [[ "$( echo $instanceStates | jq 'length' )" -eq 0 ]]; then
 	if [[ $numInstances -eq 0 ]]; then
 	    break;
 	fi
 
-	echo "-- No EC2 instances attached to auto scaling group (which is odd since we just attached them) ... please check manually!"
+	echo "-- No EC2 instances attached to auto scaling group (which is odd since we just created/attached them) ... please check manually!"
 	exit 1
     fi
 
@@ -262,6 +274,7 @@ while true; do
     sleep 3
 done
 
+instances=$( aws ec2 describe-instances --filters "Name=instance.group-name,Values=$SECURITY_GROUP_NAME" | jq -r '[ .Reservations | .[] | .Instances | .[] | .InstanceId ] | join(" ")' )
 for instanceId in $instances; do
     echo "-- Updating instance $instanceId"
     updateInstance "$instanceId"

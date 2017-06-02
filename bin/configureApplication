@@ -58,10 +58,7 @@ else
     echo "---- Creating IAM role $DEPLOYER_IAM_ROLE_NAME"
     aws iam create-role --role-name "$DEPLOYER_IAM_ROLE_NAME" --assume-role-policy-document "file://$BIN_DIR/../templates/application/role-policy.json" --description "Deployer role for $APPLICATION_NAME"
 
-    echo "---- Attaching AWS Code Deploy policy to role"
-#    aws iam attach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
-#    aws iam attach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-#    aws iam attach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSCodeDeployDeployerAccess"
+    echo "---- Attaching inline policy (allowing access to codedeploy, s3, and ec2) to role"
     aws iam put-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-name "CodeDeployPolicy" --policy-document "file://$BIN_DIR/../templates/application/inline-policy.json"
 fi
 
@@ -70,12 +67,15 @@ applicationSecurityGroupExists=$( isExitSuccess aws ec2 describe-security-groups
 if [[ "$applicationSecurityGroupExists" = "false" ]]; then
     echo "---- Security group $APPLICATION_SECURITY_GROUP_NAME does not exist, creating!"
     aws ec2 create-security-group --group-name "$APPLICATION_SECURITY_GROUP_NAME" --description "SSH access to $APPLICATION_NAME EC2 instances"
-    
-    applicationSecurityGroupId=$( aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
-    echo "---- Adding rules to allow SSH access to EC2 instances created with security group $APPLICATION_SECURITY_GROUP_NAME"
-    aws ec2 authorize-security-group-ingress --group-id "$applicationSecurityGroupId" --protocol tcp --port 22
 else
     echo "---- Security group $APPLICATION_SECURITY_GROUP_NAME already exists"
+fi
+
+echo "-- Checking ingress rules for security group $APPLICATION_SECURITY_GROUP_NAME"
+sshIngressRule=$( aws ec2 describe-security-groups --group-names segment3SecurityGroup | jq -r '.SecurityGroups | .[0] | .IpPermissions | any( (.IpProtocol = "tcp") and (.ToPort = "21") and (.IpRanges | any( .CidrIp = "0.0.0.0/0")) )' )
+if [[ "$sshIngressRule" = "false" ]]; then
+    echo "---- Adding rules to allow SSH access to EC2 instances created with security group $APPLICATION_SECURITY_GROUP_NAME"
+    aws ec2 authorize-security-group-ingress --group-name "$APPLICATION_SECURITY_GROUP_NAME" --protocol tcp --port 22 --cidr '0.0.0.0/0'
 fi
 
 echo "-- Checking if S3 bucket $CODE_DEPLOY_S3_BUCKET_NAME exists"

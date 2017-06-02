@@ -5,6 +5,7 @@
     "Resource": "*",
     "Action": [
         "autoscaling:*",
+	"s3:*",
         "ec2:Describe*"
     ]
   }

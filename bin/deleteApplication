@@ -32,7 +32,7 @@ else
 	aws iam detach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "$policyArn"
     done
     
-    inlinePolicies=$( aws iam list-role-policies --role-name segment2DeployRole | jq -r '.PolicyNames | join(" ")' )
+    inlinePolicies=$( aws iam list-role-policies --role-name "$DEPLOYER_IAM_ROLE_NAME" | jq -r '.PolicyNames | join(" ")' )
     for policyName in $inlinePolicies; do
 	echo "---- Deleting inline policy $policyName from role"
 	aws iam delete-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-name "$policyName"

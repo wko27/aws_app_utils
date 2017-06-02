@@ -31,6 +31,7 @@ autoScalingGroupExists="$( aws autoscaling describe-auto-scaling-groups | jq '.A
 if [[ "$autoScalingGroupExists" = "false" ]]; then
     echo "---- No auto scaling group $AUTO_SCALING_GROUP_NAME found"
 else
+    echo "---- Found auto scaling group $AUTO_SCALING_GROUP_NAME"
     echo "---- Setting min-size of auto scaling group $AUTO_SCALING_GROUP_NAME to 0"
     aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 0
     
