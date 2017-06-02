@@ -107,6 +107,30 @@ else
     aws deploy delete-application --application-name "$CODE_DEPLOY_APPLICATION_NAME"
 fi
 
+echo "-- Checking if IAM instance profile $EC2_IAM_PROFILE_NAME exists"
+iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$EC2_IAM_PROFILE_NAME" )
+if [[ "$iamInstanceProfileExists" = "false" ]]; then
+    echo "---- No IAM instance profile $EC2_IAM_PROFILE_NAME found"
+else
+    echo "---- Detaching role from instance profile"
+    aws iam remove-role-from-instance-profile --instance-profile-name "$EC2_IAM_PROFILE_NAME" --role-name "$EC2_IAM_ROLE_NAME"
+    
+    echo "---- Deleting IAM instance profile $EC2_IAM_PROFILE_NAME"
+    aws iam delete-instance-profile --instance-profile-name "$EC2_IAM_PROFILE_NAME"
+fi
+
+echo "-- Checking if IAM role $DEPLOYER_IAM_ROLE_NAME exists"
+deployerRoleExists=$( isExitSuccess aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" )
+if [[ "$deployerRoleExists" = "false" ]]; then
+    echo "---- No IAM role $EC2_IAM_ROLE_NAME found"
+else
+    echo "---- Detaching Code Deploy managed policy from role"
+    aws iam detach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
+    
+    echo "---- Deleting IAM role $EC2_IAM_ROLE_NAME"
+    aws iam delete-role --role-name "$EC2_IAM_ROLE_NAME"
+fi
+
 #######################################################
 # Now sanity check that everything was deleted properly
 #######################################################
@@ -133,6 +157,16 @@ codeDeployApplicationExists="$( aws deploy list-applications | jq '.applications
 if [[ "$codeDeployApplicationExists" = "true" ]]; then
     echo "---- Failed to delete code deploy application $CODE_DEPLOY_APPLICATION_NAME"
     exit -1
+fi
+
+iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$IAM_ROLE_NAME" )
+if [[ "$iamInstanceProfileExists" = "true" ]]; then
+    echo "---- Failed to delete IAM instance profile $IAM_ROLE_NAME"
+fi
+
+deployerRoleExists=$( isExitSuccess aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" )
+if [[ "$deployerRoleExists" = "true" ]]; then
+    echo "---- Failed to delete IAM EC2 role $EC2_IAM_ROLE_NAME"
 fi
 
 echo "-- All resources for service $service are released"

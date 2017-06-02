@@ -130,6 +130,30 @@ if [[ ! -e ~/.ssh/"$EC2_KEYPAIR_NAME".pem ]]; then
     exit 1
 fi
 
+echo "-- Checking if EC2 IAM role $EC2_IAM_ROLE_NAME exists"
+ec2RoleExists=$( isExitSuccess aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" )
+if [[ "$ec2RoleExists" = "true" ]]; then
+    echo "---- IAM role $EC2_IAM_ROLE_NAME already exists"
+else
+    echo "---- Creating IAM role $EC2_IAM_ROLE_NAME"
+    aws iam create-role --role-name "$EC2_IAM_ROLE_NAME" --assume-role-policy-document "file://$BIN_DIR/../templates/application/role-policy.json" --description "EC2 role for $service"
+
+    echo "---- Attaching AWS Code Deploy policy to role"
+    aws iam attach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
+fi
+
+echo "-- Checking if IAM instance profile $EC2_IAM_ROLE_NAME exists"
+iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$EC2_IAM_PROFILE_NAME" )
+if [[ "$iamInstanceProfileExists" = "true" ]]; then
+    echo "---- IAM instance profile $EC2_IAM_PROFILE_NAME already exists"
+else
+    echo "---- Creating IAM instance profile $EC2_IAM_PROFILE_NAME"
+    aws iam create-instance-profile --instance-profile-name "$EC2_IAM_PROFILE_NAME"
+    
+    echo "---- Attaching role to instance profile"
+    aws iam add-role-to-instance-profile --instance-profile-name "$EC2_IAM_PROFILE_NAME" --role-name "$EC2_IAM_ROLE_NAME"
+fi
+
 echo "-- Checking if code deploy application $CODE_DEPLOY_APPLICATION_NAME exists"
 codeDeployApplicationExists="$( aws deploy list-applications | jq '.applications | any(. == "'"$CODE_DEPLOY_APPLICATION_NAME"'")' )"
 if [[ "$codeDeployApplicationExists" = "false" ]]; then
@@ -147,7 +171,7 @@ echo "-- Checking if deployment group $DEPLOYMENT_GROUP_NAME exists"
 deploymentGroupExists=$( aws deploy list-deployment-groups --application-name "$CODE_DEPLOY_APPLICATION_NAME" | jq '.deploymentGroups | any(. == "'"$DEPLOYMENT_GROUP_NAME"'")' )
 if [[ "$deploymentGroupExists" = "false" ]]; then
     echo "---- Deployment group $DEPLOYMENT_GROUP_NAME does not exist, creating!"
-    serviceRoleArn=$( aws iam get-role --role-name "$IAM_ROLE_NAME" | jq -r '.Role | .Arn' )
+    serviceRoleArn=$( aws iam get-role --role-name "DEPLOYER_IAM_ROLE_NAME" | jq -r '.Role | .Arn' )
     aws deploy create-deployment-group --application-name "$CODE_DEPLOY_APPLICATION_NAME" --deployment-group-name "$DEPLOYMENT_GROUP_NAME" --service-role-arn "$serviceRoleArn"
     if [[ $? -ne 0 ]]; then
 	echo "---- Failed to create deployment group"
@@ -203,7 +227,7 @@ if [[ "$launchConfigurationExists" = false ]]; then
     echo "---- No launch configuration $AUTO_SCALING_GROUP_NAME exists, creating!"
     securityGroupId=$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
     applicationSecurityGroupId=$( aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
-    aws autoscaling create-launch-configuration --launch-configuration-name "$AUTO_SCALING_GROUP_NAME" --image-id "ami-5ec1673e" --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --security-groups "$securityGroupId" "$applicationSecurityGroupId" --iam-instance-profile "$IAM_ROLE_NAME" --user-data "file://$BIN_DIR/../templates/service/ec2bootstrap.sh"
+    aws autoscaling create-launch-configuration --launch-configuration-name "$AUTO_SCALING_GROUP_NAME" --image-id "ami-5ec1673e" --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --security-groups "$securityGroupId" "$applicationSecurityGroupId" --iam-instance-profile "$EC2_IAM_PROFILE_NAME" --user-data "file://$BIN_DIR/../templates/service/ec2bootstrap.sh"
 else
     echo "---- Launch configuration $AUTO_SCALING_GROUP_NAME already exists!"
 fi

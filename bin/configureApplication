@@ -50,31 +50,19 @@ if [[ $( stat -f %A ~/.ssh/"$EC2_KEYPAIR_NAME".pem ) != "400" ]]; then
     chmod 400 ~/.ssh/"$EC2_KEYPAIR_NAME".pem
 fi
 
-echo "-- Checking if IAM role $IAM_ROLE_NAME exists"
-iamRoleExists=$( isExitSuccess aws iam get-role --role-name "$IAM_ROLE_NAME" )
-if [[ "$iamRoleExists" = "true" ]]; then
-    echo "---- IAM role $IAM_ROLE_NAME already exists"
+echo "-- Checking if IAM role $DEPLOYER_IAM_ROLE_NAME exists"
+deployerRoleExists=$( isExitSuccess aws iam get-role --role-name "$DEPLOYER_IAM_ROLE_NAME" )
+if [[ "$deployerRoleExists" = "true" ]]; then
+    echo "---- IAM role $DEPLOYER_IAM_ROLE_NAME already exists"
 else
-    echo "---- Creating IAM role $IAM_ROLE_NAME"
-    aws iam create-role --role-name "$IAM_ROLE_NAME" --assume-role-policy-document "file://$BIN_DIR/../templates/application/role-policy.json" --description "IAM role for $APPLICATION_NAME"
+    echo "---- Creating IAM role $DEPLOYER_IAM_ROLE_NAME"
+    aws iam create-role --role-name "$DEPLOYER_IAM_ROLE_NAME" --assume-role-policy-document "file://$BIN_DIR/../templates/application/role-policy.json" --description "Deployer role for $APPLICATION_NAME"
 
     echo "---- Attaching AWS Code Deploy policy to role"
-#    aws iam attach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
-#    aws iam attach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-#    aws iam attach-role-policy --role-name "$IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSCodeDeployDeployerAccess"
-    aws iam put-role-policy --role-name "$IAM_ROLE_NAME" --policy-name "CodeDeployPolicy" --policy-document "file://$BIN_DIR/../templates/application/inline-policy.json"
-fi
-
-echo "-- Checking if IAM instance profile $IAM_ROLE_NAME exists"
-iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$IAM_ROLE_NAME" )
-if [[ "$iamInstanceProfileExists" = "true" ]]; then
-    echo "---- IAM instance profile $IAM_ROLE_NAME already exists"
-else
-    echo "---- Creating IAM instance profile $IAM_ROLE_NAME"
-    aws iam create-instance-profile --instance-profile-name "$IAM_ROLE_NAME"
-    
-    echo "---- Attaching role to instance profile"
-    aws iam add-role-to-instance-profile --instance-profile-name "$IAM_ROLE_NAME" --role-name "$IAM_ROLE_NAME"
+#    aws iam attach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+#    aws iam attach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+#    aws iam attach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSCodeDeployDeployerAccess"
+    aws iam put-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-name "CodeDeployPolicy" --policy-document "file://$BIN_DIR/../templates/application/inline-policy.json"
 fi
 
 echo "-- Checking if default security group $APPLICATION_SECURITY_GROUP_NAME exists"
