@@ -26,8 +26,17 @@ deployerRoleExists=$( isExitSuccess aws iam get-role --role-name "$DEPLOYER_IAM_
 if [[ "$deployerRoleExists" = "false" ]]; then
     echo "---- No IAM role $DEPLOYER_IAM_ROLE_NAME found"
 else
-#    echo "---- Detaching Code Deploy managed policy from role"
-#    aws iam detach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
+    managedPolicies=$( aws iam list-attached-role-policies --role-name "$DEPLOYER_IAM_ROLE_NAME" | jq -r '.AttachedPolicies | map( .PolicyArn ) | join( " " )' )
+    for policyArn in $managedPolicies; do
+	echo "---- Detaching managed policy $policyArn from role"
+	aws iam detach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "$policyArn"
+    done
+    
+    inlinePolicies=$( aws iam list-role-policies --role-name segment2DeployRole | jq -r '.PolicyNames | join(" ")' )
+    for policyName in $inlinePolicies; do
+	echo "---- Deleting inline policy $policyName from role"
+	aws iam delete-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-name "$policyName"
+    done
     
     echo "---- Deleting IAM role $DEPLOYER_IAM_ROLE_NAME"
     aws iam delete-role --role-name "$DEPLOYER_IAM_ROLE_NAME"
@@ -46,7 +55,7 @@ if [[ "$codeDeployS3BucketExists" = "false" ]]; then
     echo "---- No code deploy s3 bucket $CODE_DEPLOY_S3_BUCKET_NAME found"
 else
     echo "---- Deleting code deploy s3 bucket $CODE_DEPLOY_S3_BUCKET_NAME"
-    aws s3api delete-bucket --bucket "$CODE_DEPLOY_S3_BUCKET_NAME"
+    aws s3 rb "s3://$CODE_DEPLOY_S3_BUCKET_NAME" --force
 fi
 
 echo "-- All resources for application $APPLICATION_NAME are released (except EC2 keypair in ~/.ssh/$EC2_KEYPAIR_NAME.pem)"

@@ -35,7 +35,7 @@ else
     aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 0
     
     echo "---- Finding instances attached to group"
-    instances=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names ParserGroup | jq -r '.AutoScalingGroups | .[0] | .Instances | map( .InstanceId ) | join(" ")' )
+    instances=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$AUTO_SCALING_GROUP_NAME" | jq -r '.AutoScalingGroups | .[0] | .Instances | map( .InstanceId ) | join(" ")' )
     if [[ -n "$instances" ]]; then
 	echo "---- Detaching instances: $instances"
 	for instanceId in $instances; do
@@ -45,7 +45,7 @@ else
 	
 	echo "---- Waiting for instances to fully detach"
 	while true; do
-	    anyAttached=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names ParserGroup | jq -r '.AutoScalingGroups | .[0] | .Instances | any' )
+	    anyAttached=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$AUTO_SCALING_GROUP_NAME" | jq -r '.AutoScalingGroups | .[0] | .Instances | any' )
 	    if [[ "$anyAttached" = "false" ]]; then
 		break;
 	    fi
@@ -119,14 +119,17 @@ else
     aws iam delete-instance-profile --instance-profile-name "$EC2_IAM_PROFILE_NAME"
 fi
 
-echo "-- Checking if IAM role $DEPLOYER_IAM_ROLE_NAME exists"
+echo "-- Checking if IAM role $EC2_IAM_ROLE_NAME exists"
 deployerRoleExists=$( isExitSuccess aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" )
 if [[ "$deployerRoleExists" = "false" ]]; then
     echo "---- No IAM role $EC2_IAM_ROLE_NAME found"
 else
-    echo "---- Detaching Code Deploy managed policy from role"
-    aws iam detach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
-    
+    managedPolicies=$( aws iam list-attached-role-policies --role-name "$DEPLOYER_IAM_ROLE_NAME" | jq -r '.AttachedPolicies | map( .PolicyArn ) | join( " " )' )
+    for policyArn in $managedPolicies; do
+        echo "---- Detaching managed policy $policyArn from role"
+        aws iam detach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "$policyArn"
+    done
+
     echo "---- Deleting IAM role $EC2_IAM_ROLE_NAME"
     aws iam delete-role --role-name "$EC2_IAM_ROLE_NAME"
 fi
@@ -134,6 +137,7 @@ fi
 #######################################################
 # Now sanity check that everything was deleted properly
 #######################################################
+echo "-- Verifying all resources released"
 
 autoScalingGroupExists="$( aws autoscaling describe-auto-scaling-groups | jq '.AutoScalingGroups | any(.AutoScalingGroupName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
 if [[ "$autoScalingGroupExists" = "true" ]]; then
@@ -159,14 +163,14 @@ if [[ "$codeDeployApplicationExists" = "true" ]]; then
     exit -1
 fi
 
-iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$IAM_ROLE_NAME" )
+iamInstanceProfileExists=$( isExitSuccess aws iam get-instance-profile --instance-profile-name "$EC2_IAM_PROFILE_NAME" )
 if [[ "$iamInstanceProfileExists" = "true" ]]; then
-    echo "---- Failed to delete IAM instance profile $IAM_ROLE_NAME"
+    echo "---- Failed to delete IAM instance profile $EC2_IAM_PROFILE_NAME"
 fi
 
-deployerRoleExists=$( isExitSuccess aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" )
-if [[ "$deployerRoleExists" = "true" ]]; then
-    echo "---- Failed to delete IAM EC2 role $EC2_IAM_ROLE_NAME"
+ec2RoleExists=$( isExitSuccess aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" )
+if [[ "$ec2RoleExists" = "true" ]]; then
+    echo "---- Failed to delete IAM role $EC2_IAM_ROLE_NAME"
 fi
 
 echo "-- All resources for service $service are released"
