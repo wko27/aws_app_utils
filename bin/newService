@@ -48,7 +48,7 @@ if [[ -e "$serviceRoot/aws.properties" ]]; then
 else
     echo "---- Creating service's aws.properties"
     cat "$BIN_DIR/../templates/service/aws.properties" | sed "s|__SERVICE__|$service|g" | sed "s|__APPLICATION_ROOT__|$applicationRoot|g" > "$serviceRoot/aws.properties"
-    cp -r "$BIN_DIR/../templates/service/codedeploy" "$serviceRoot/"
+    cp -r "$BIN_DIR/../templates/service/aws.codedeploy" "$serviceRoot/"
 fi
 
 affirm "-- Configure AWS (including an EC2 instance) now?"

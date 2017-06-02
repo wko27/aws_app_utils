@@ -31,34 +31,6 @@ service=$( basename "$serviceRoot" )
 
 loadServiceProperties "$serviceRoot"
 
-# Create an AWS instance
-# Sets the instanceId variable to the created instance's id
-createInstance() {
-    echo "-- Creating an EC2 instance with security groups '$SECURITY_GROUP_NAME' and '$APPLICATION_SECURITY_GROUP_NAME'"
-    securityGroupId=$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
-    applicationSecurityGroupId=$( aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
-    
-    launchResult=$( aws ec2 run-instances --image-id "ami-5ec1673e" --count 1 --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --placement "AvailabilityZone=$ZONE" --security-group-ids "$securityGroupId" "$applicationSecurityGroupId" --iam-instance-profile Name="$IAM_ROLE_NAME")
-    if [[ $? -ne 0 ]]; then
-	echo "$launchResult"
-	echo "Failed to launch new ec2 instance!"
-	exit 1
-    fi
-    
-    instanceId=$( echo "$launchResult" | jq -r '.Instances | .[0] | .InstanceId' )
-    echo "---- Created instance $instanceId"
-    
-    echo "-- Checking instance status"
-    while true; do
-	instanceStatus=$( aws ec2 describe-instance-status --instance-ids "$instanceId" | jq -r '.InstanceStatuses | .[0] | .InstanceState | .Name' )
-	echo "---- Instance $instanceId has status $instanceStatus"
-	if [[ "$instanceStatus" = "running" ]]; then
-	    break;
-	fi
-	sleep 3
-    done
-}
-
 # Update an instance
 updateInstance() {
     instanceId="$1"
@@ -136,7 +108,7 @@ if [[ "$ec2RoleExists" = "true" ]]; then
     echo "---- IAM role $EC2_IAM_ROLE_NAME already exists"
 else
     echo "---- Creating IAM role $EC2_IAM_ROLE_NAME"
-    aws iam create-role --role-name "$EC2_IAM_ROLE_NAME" --assume-role-policy-document "file://$BIN_DIR/../templates/application/role-policy.json" --description "EC2 role for $service"
+    aws iam create-role --role-name "$EC2_IAM_ROLE_NAME" --assume-role-policy-document "file://$BIN_DIR/../templates/service/role-policy.json" --description "EC2 role for $service"
 
     echo "---- Attaching AWS Code Deploy policy to role"
     aws iam attach-role-policy --role-name "$DEPLOYER_IAM_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"

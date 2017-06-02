@@ -53,7 +53,7 @@ echo "-- Copying $LOCAL_BUILD_DIR to temp directory $BUILD_DIR"
 cp -r "$serviceRoot/$LOCAL_BUILD_DIR" "$BUILD_DIR"
 
 echo "-- Copying appspec and scripts from _scripts/aws/ to temp directory $BUILD_DIR"
-cp -r "$serviceRoot"/codedeploy/* "$BUILD_DIR/"
+cp -r "$serviceRoot"/aws.codedeploy/* "$BUILD_DIR/"
 
 size=$( du -sh "$BUILD_DIR" | awk '{print $1}' )
 echo "-- Build directory size is $size"

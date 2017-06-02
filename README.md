@@ -21,12 +21,12 @@ Helpful tools for quickly creating/prototyping simple applications on AWS
 
 * Run `newApplication` (and follow the prompts) to create a new application
 * Run `newService` (and follow the prompts) to create a new service
-* Run `configureService (service)` to
   * create an auto scaling group
   * create a security group
   * create a code deploy group
   * create a a deployment application
   * create one EC2 instance
-* Run `deployService (build dir) (service)` to deploy the code to your service
+* Run `deployService (service)` to deploy code to your service
 * Run `sshaws (service)` to ssh into that EC2 instance
 * Run `deleteService (service)` to delete all resources configured for this service
+* Run `deleteApplication (application)` to delete all resources for an application
