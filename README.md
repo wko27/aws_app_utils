@@ -41,4 +41,4 @@ Helpful tools for quickly creating/prototyping simple applications on AWS
   * Please do not share the generated .pem files.
   * Add everybody's PUBLIC ssh keys into the ssh-access section of (app directory)/app-aws.properties
 * I don't like this, what else can I use?
-  * Check out [awless] (https://github.com/wallix/awless)
+  * Check out [awless](https://github.com/wallix/awless)
