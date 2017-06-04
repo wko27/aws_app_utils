@@ -7,13 +7,11 @@ set -u # Treat unset variables as an error when substituting.
 
 help_text() {
     echo "Usage:"
-    echo "  configureService (path to service)"
+    echo "  aws-app configure-service (path to service)"
     echo "    - verifies and configures AWS entities for the given service"
-    echo "  configureService"
+    echo "  aws-app configureService"
     echo "    - verifies and configures AWS entities for the service in the current directory"
-    echo "  configureService -h"
-    echo "    - show this help text"
-    echo "  configureService --help"
+    echo "  aws-app configureService help"
     echo "    - show this help text"
     exit 0
 }
@@ -21,7 +19,7 @@ help_text() {
 if [[ $# -eq 0 ]]; then
     serviceRoot=$( pwd -P )
 elif [[ $# -eq 1 ]]; then
-    if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help" || "$1" = "help"]]; then
 	help_text
     fi
     serviceRoot="$( cd $1 && pwd -P )"

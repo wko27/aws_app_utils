@@ -7,13 +7,11 @@ set -u # Treat unset variables as an error when substituting.
 
 help_text() {
     echo "Usage:"
-    echo "  newApplication"
+    echo "  aws-app new-app"
     echo "    - creates a new application (will prompt for name)"
-    echo "  newApplication (application name)"
+    echo "  aws-app new-app (application name)"
     echo "    - creates a new application with the given name"
-    echo "  newApplication -h"
-    echo "    - displays this help text"
-    echo "  newApplication --help"
+    echo "  aws-app new-app help"
     echo "    - displays this help text"
     exit 0
 }
@@ -21,7 +19,7 @@ help_text() {
 if [[ $# -eq 0 ]]; then
     application=$( prompt "Application name: " )
 elif [[ $# -eq 1 ]]; then
-    if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help" || "$1" = "help" ]]; then
 	help_text
     fi
     application="$1"

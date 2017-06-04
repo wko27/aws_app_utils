@@ -7,13 +7,19 @@ set -u # Abort on undeclared variable
 
 help_text() {
     echo "Usage:"
-    echo "  deleteApplication"
+    echo "  aws-app delete-app"
     echo "    - deletes all configurations/resources for the given application"
+    echo "  aws-app delete-app help"
+    echo "    - displays this help text"
     exit 0
 }
 
-if [[ $# -ge 1 && ( "$1" = "-h" || "$1" == "--help" ) ]]; then
-    help_text
+if [[ $# -eq 1 ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help" || "$1" = "help" ]]; then
+	help_text
+    fi
+    echo "Unknown arguments: $@"
+    exit 1
 fi
 
 applicationRoot="$( findApplicationRoot )"

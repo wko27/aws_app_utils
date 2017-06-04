@@ -1,0 +1,46 @@
+#!/bin/bash
+# Entry point to all aws-app functions
+
+COMMAND_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../commands"; pwd -P )"
+
+simple_help() {
+cat <<EOF
+
+usage: $0 <command> [parameters]
+
+To see help text, run:
+  aws-app help
+  aws-app <command> help
+EOF
+}
+
+help_text() {
+cat <<EOF
+NAME
+       aws-app
+DESCRIPTION
+       aws-app is a command line utility to build simple applications on AWS
+SYNOPSIS
+       aws-app <command> [parameters]
+
+       Use 'aws-app <command> help' for information on a specific command
+COMMANDS
+EOF
+    find "$COMMAND_DIR" -type f -print0 | xargs -0 basename | sed 's/^/       /'
+}
+
+if [[ $# -eq 0 ]]; then
+   simple_help
+   exit 0
+elif [[ $# -eq 1 && "$1" = "help" ]]; then
+   help_text | less
+   exit 0
+fi
+
+command="$1"
+shift
+if [[ ! -e "$COMMAND_DIR"/"$command" ]]; then
+    echo "Unknown command: $command"
+fi
+
+exec "$COMMAND_DIR"/"$command" $@
