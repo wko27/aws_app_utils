@@ -7,10 +7,10 @@ set -u # Treat unset variables as an error when substituting.
 
 help_text() {
     echo "Usage:"
-    echo "  aws-app configure-service (path to service)"
-    echo "    - verifies and configures AWS entities for the given service"
     echo "  aws-app configureService"
     echo "    - verifies and configures AWS entities for the service in the current directory"
+    echo "  aws-app configure-service (path to service)"
+    echo "    - verifies and configures AWS entities for the given service"
     echo "  aws-app configureService help"
     echo "    - show this help text"
     exit 0

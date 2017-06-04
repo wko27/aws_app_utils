@@ -7,10 +7,10 @@ set -u # Treat unset variables as an error when substituting.
 
 help_text() {
     echo "Usage:"
-    echo "  aws-app deploy (path to service)"
-    echo "    - uploads build directory to S3, and code deploys to the EC2 instance for the given service"
     echo "  aws-app deploy"
     echo "    - uploads build directory to S3, and code deploys to the EC2 instance for the service in the current directory"
+    echo "  aws-app deploy (path to service)"
+    echo "    - uploads build directory to S3, and code deploys to the EC2 instance for the given service"
     echo "  aws-app deploy help"
     echo "    - displays this help text"
     exit 0
