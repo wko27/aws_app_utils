@@ -7,15 +7,19 @@ set -u # Abort on undeclared variable
 
 help_text() {
     echo "Usage:"
-    echo "  deleteService (service)"
+    echo "  aws-app delete-service"
+    echo "    - deletes all configurations/resources for the service in the current directory"
+    echo "  aws-app delete-service (service)"
     echo "    - deletes all configurations/resources for the given service"
+    echo "  aws-app delete-service help"
+    echo "    - show this help text"
     exit 0
 }
 
 if [[ $# -eq 0 ]]; then
     serviceRoot=$( pwd -P )
 elif [[ $# -eq 1 ]]; then
-    if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+    if [[ "$1" = "-h" || "$1" = "--help"|| "$1" = "help" ]]; then
 	help_text
     fi
     serviceRoot="$( cd $1 && pwd -P )"

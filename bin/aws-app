@@ -40,7 +40,8 @@ fi
 command="$1"
 shift
 if [[ ! -e "$COMMAND_DIR"/"$command" ]]; then
-    echo "Unknown command: $command"
+    echo "Unknown aws-app command: $command"
+    exit 1
 fi
 
 exec "$COMMAND_DIR"/"$command" $@

@@ -8,7 +8,7 @@ set -u # Treat unset variables as an error when substituting.
 help_text() {
     echo "Usage:"
     echo "  aws-app configure-app"
-    echo "    - verifies and configures AWS entities for the application"
+    echo "    - verifies and configures AWS entities for the application in the current directory"
     echo "  aws-app configure-app help"
     echo "    - displays this help text"
     exit 0
@@ -74,10 +74,15 @@ else
 fi
 
 echo "-- Checking ingress rules for security group $APPLICATION_SECURITY_GROUP_NAME"
-sshIngressRule=$( aws ec2 describe-security-groups --group-names segment3SecurityGroup | jq -r '.SecurityGroups | .[0] | .IpPermissions | any( (.IpProtocol = "tcp") and (.ToPort = "21") and (.IpRanges | any( .CidrIp = "0.0.0.0/0")) )' )
+sshIngressRule=$( aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .IpPermissions | any( (.IpProtocol = "tcp") and (.ToPort = "21") and (.IpRanges | any( .CidrIp = "0.0.0.0/0")) )' )
 if [[ "$sshIngressRule" = "false" ]]; then
     echo "---- Adding rules to allow SSH access to EC2 instances created with security group $APPLICATION_SECURITY_GROUP_NAME"
     aws ec2 authorize-security-group-ingress --group-name "$APPLICATION_SECURITY_GROUP_NAME" --protocol tcp --port 22 --cidr '0.0.0.0/0'
+    sshIngressRule=$( aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .IpPermissions | any( (.IpProtocol = "tcp") and (.ToPort = "21") and (.IpRanges | any( .CidrIp = "0.0.0.0/0")) )' )
+    if [[ "$sshIngressRule" = "false" ]]; then
+	echo "---- Unable to add ingress rule for security group $APPLICATION_SECURITY_GROUP_NAME"
+	exit 1
+    fi
 fi
 
 echo "-- Checking if S3 bucket $CODE_DEPLOY_S3_BUCKET_NAME exists"

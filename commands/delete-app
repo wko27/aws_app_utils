@@ -8,7 +8,7 @@ set -u # Abort on undeclared variable
 help_text() {
     echo "Usage:"
     echo "  aws-app delete-app"
-    echo "    - deletes all configurations/resources for the given application"
+    echo "    - deletes all configurations/resources for the application in the current directory"
     echo "  aws-app delete-app help"
     echo "    - displays this help text"
     exit 0

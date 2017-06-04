@@ -43,7 +43,7 @@ if [[ -e "$applicationRoot/aws.properties" ]]; then
     echo "---- Found existing aws.properties in $applicationRoot"
 else
     echo "---- Creating application's aws.properties"
-    cat "$BIN_DIR/../templates/application/aws.properties" | sed "s/__APPLICATION__/$application/g" > "$applicationRoot/aws.properties"
+    cat "$BIN_DIR/../templates/application/app-aws.properties" | sed "s/__APPLICATION__/$application/g" > "$applicationRoot/app-aws.properties"
 fi
 
-cd "$applicationRoot" && configureApplication
+cd "$applicationRoot" && aws-app configure-app

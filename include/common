@@ -61,12 +61,12 @@ checkVariableSet() {
 loadApplicationProperties() {
     applicationRoot="$1"
 
-    if [[ ! -e "$applicationRoot/aws.properties" ]]; then
-	echo "No aws.properties found in $applicationRoot"
+    if [[ ! -e "$applicationRoot/app-aws.properties" ]]; then
+	echo "No app-aws.properties found in $applicationRoot"
 	exit 1
     fi
 
-    source "$applicationRoot/aws.properties"
+    source "$applicationRoot/app-aws.properties"
     
     checkVariableSet "APPLICATION_NAME"
     checkVariableSet "EC2_KEYNAME"
@@ -103,7 +103,7 @@ loadServiceProperties() {
 findApplicationRoot() {
     current=$( pwd -P )
     while [[ "$current" != "/" ]]; do
-	awsProperties="$current/aws.properties"
+	awsProperties="$current/app-aws.properties"
 	if [[ -e "$awsProperties" ]]; then
 	    if grep -q "### application aws.properties" "$awsProperties"; then
 		echo "$current"
@@ -112,7 +112,7 @@ findApplicationRoot() {
 	fi
 	current=$( cd "$current/.." && pwd -P )
     done
-    echo "---- Could not find a parent directory with an application aws.properties" 1>&2
+    echo "---- Could not find a parent directory with an application app-aws.properties" 1>&2
     echo "---- Are you not in a valid repository?" 1>&2
     exit 1
 }
