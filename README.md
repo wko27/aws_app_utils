@@ -6,7 +6,8 @@ Helpful tools for quickly creating/prototyping simple applications on AWS
 * Add the following to your ~/.bash_profile
   * `export PATH=(full path to bin directory):$PATH`
   * Note this should be a full path (do not use ~)
-  * For example, if I cloned this repository to /Users/bob/repos/aws_app_utils, then I would add this line `export PATH=/Users/bob/repos/aws_app_utils/bin:$PATH`
+  * For example, if I cloned this repository to /Users/bob/repos/aws_app_utils, then I would add this line
+    *`export PATH=/Users/bob/repos/aws_app_utils/bin:$PATH`
 
 ### Usage
 
@@ -27,7 +28,7 @@ Helpful tools for quickly creating/prototyping simple applications on AWS
   * This is intended to be an easy bootstrap way to get simple services and lambdas running when prototyping an app
   * Please use CloudFormation or other AWS infrastructure when your app needs to become more serious
 * How do I give access to other users to my services' EC2 instances?
-  * Please do not share the generated .pem files.
   * (app directory)/app-aws.properties, modify the EC2_USER_PUBLIC_KEYS
+  * Please do not share generated .pem files
 * I don't like this, what else can I use?
   * Check out [awless](https://github.com/wallix/awless)
