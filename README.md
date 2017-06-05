@@ -13,14 +13,14 @@ Helpful tools for quickly creating/prototyping simple applications on AWS
 * Run `aws-app create-app` (and follow the prompts) to create a new application
 * Run `aws-app create-service` (and follow the prompts) to create a new service
   * with 1 EC2 instance attached to an autoscaling group, an app-level security group, and a service-level security group
-* Run `aws-app delete-service (service)` to deploy code to your service
-* Run `aws-app ssh (service)` to ssh into that EC2 instance
+* Run `aws-app deploy` to deploy code to your service
+* Run `aws-app ssh` to ssh into that EC2 instance
 * Run `aws-app delete-service` to delete all resources configured for this service
 * Run `aws-app delete-app` to delete all resources for an application
 
 ### FAQ
 
-* How to specify the build directory
+* How do I specify the build directory
   * (service directory)/aws.properties, modify the LOCAL_BULID_DIR
 * Is this webscale?
   * No.

@@ -151,7 +151,7 @@ if [[ -n "$SECURITY_GROUP_EGRESS_IP_PERMISSIONS" ]]; then
     echo "---- Adding egress rules to security group: $SECURITY_GROUP_EGRESS_IP_PERMISSIONS"
     # Unfortunately, we have no easy way of finding out if the security group already has this rule
     set +e
-    error=$( aws ec2 authorize-security-group-ingress --group-id "$securityGroupId" --ip-permissions "$SECURITY_GROUP_EGRESS_IP_PERMISSIONS" )
+    error=$( aws ec2 authorize-security-group-egress --group-id "$securityGroupId" --ip-permissions "$SECURITY_GROUP_EGRESS_IP_PERMISSIONS" 2>&1 )
     if [[ $? -ne 0 ]]; then
 	if ! echo "$error" | grep -q 'Duplicate.*already exists'; then
 	    echo "---- Failed to add egress rules to security group $SECURITY_GROUP_NAME (with id $securityGroupId)"
@@ -266,3 +266,5 @@ for instanceId in $instances; do
 done
 
 echo "-- Service $service is configured!"
+echo
+echo "-- Deploy code with the deploy command!"

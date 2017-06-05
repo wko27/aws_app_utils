@@ -95,3 +95,5 @@ else
 fi
 
 echo "-- Application configured!"
+echo
+echo "-- Create a service with the create-service command!"
