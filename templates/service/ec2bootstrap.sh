@@ -23,3 +23,7 @@ if java -version 2>&1 | head -n 1 | grep -q 1.7; then
     echo "-- Installing Java 8, removing Java 7, and setting Java 8 to default"
     yum -y install java-1.8.0 && sudo yum -y remove java-1.7.0-openjdk && sudo /usr/sbin/alternatives --set java /usr/lib/jvm/jre-1.8.0-openjdk.x86_64/bin/java
 fi
+
+cat <<EOF >> /home/ec2-user/.ssh/authorized_keys
+__EC2_USER_PUBLIC_KEYS__
+EOF

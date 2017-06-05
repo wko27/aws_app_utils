@@ -47,8 +47,14 @@ if [[ "$( echo $instances | jq 'length' )" -gt 0 ]]; then
 	echo "No public DNS name found for $instanceId"
 	exit 1
     fi
-    echo "-- Opening ssh session into $dns"
-    ssh -i "~/.ssh/$EC2_KEYPAIR_NAME.pem" "ec2-user@$dns"
+    
+    if [[ -e ~/.ssh/"$EC2_KEYPAIR_NAME.pem" ]]; then
+	echo "-- Opening ssh session into $dns with $EC2_KEYPAIR_NAME.pem"
+	ssh -i "~/.ssh/$EC2_KEYPAIR_NAME.pem" "ec2-user@$dns"
+    else
+	echo "-- Opening ssh session into $dns"
+	ssh "ec2-user@$dns"
+    fi
 else
     echo "-- No instance attached to auto scaling group"
     exit 1

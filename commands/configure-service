@@ -53,37 +53,6 @@ updateInstance() {
 	echo "-- Connection refused"
     done
     set -e
-    
-    echo "-- Updating packages and installing emacs"
-    runRemote "$dnsName" "sudo yum update -y"
-    runRemote "$dnsName" "sudo yum install emacs -y"
-    
-    echo "-- Checking CodeDeploy agent on $instanceId ($dnsName)"
-    set +e # allow this command to fail if the codedeploy-agent is missing
-    agentStatus=$( runRemote "$dnsName" "sudo service codedeploy-agent status" )
-    set -e
-    
-    if [[ "$agentStatus" =~ "agent is running" ]]; then
-	echo "---- CodeDeploy agent is running"
-    elif [[ "$agentStatus" =~ "unrecognized service" ]]; then
-	echo "---- Installing CodeDeploy agent on $instanceId ($dnsName)"
-	runRemote "$dnsName" "wget https://aws-codedeploy-us-west-2.s3.amazonaws.com/latest/install && chmod +x install && sudo ./install auto && rm install"
-	agentStatus=$( runRemote "$dnsName" "sudo service codedeploy-agent status" )
-	if [[ ! "$agentStatus" =~ "agent is running" ]]; then
-	    echo "---- Failed to install CodeDeploy agent, please install manually"
-	    exit 1
-	fi
-    else
-	echo "Error attempting to check CodeDeploy agent, resolve manually!"
-	echo "$agentStatus"
-	exit 1
-    fi
-    
-    echo "-- Checking Java version"
-    if runRemote "$dnsName" "java -version 2>&1 | head -n 1 | grep -q 1.7"; then
-	echo "-- Installing Java 8, removing Java 7, and setting Java 8 to default"
-	runRemote "$dnsName" "sudo yum -y install java-1.8.0 && sudo yum -y remove java-1.7.0-openjdk && sudo /usr/sbin/alternatives --set java /usr/lib/jvm/jre-1.8.0-openjdk.x86_64/bin/java"
-    fi
 }
 
 # Run a script on a remote SSH server
@@ -159,18 +128,37 @@ if [[ "$securityGroupExists" = "false" ]]; then
 	echo "---- Failed to create security group"
 	exit 1
     fi
-    
-    if [[ -n "$SECURITY_GROUP_RULE" ]]; then
-	securityGroupId=$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
-	echo "---- Adding rules to security group: $SECURITY_GROUP_RULE"
-	aws ec2 authorize-security-group-ingress --group-id "$securityGroupId" $SECURITY_GROUP_RULE
-	if [[ $? -ne 0 ]]; then
+else
+    echo "---- Security group $SECURITY_GROUP_NAME already exists"
+fi
+
+securityGroupId=$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
+if [[ -n "$SECURITY_GROUP_INGRESS_IP_PERMISSIONS" ]]; then
+    echo "---- Adding ingress rules to security group: $SECURITY_GROUP_INGRESS_IP_PERMISSIONS"
+    # Unfortunately, we have no easy way of finding out if the security group already has this rule
+    set +e
+    error=$( aws ec2 authorize-security-group-ingress --group-id "$securityGroupId" --ip-permissions "$SECURITY_GROUP_INGRESS_IP_PERMISSIONS" 2>&1 )
+    if [[ $? -ne 0 ]]; then
+	if ! echo "$error" | grep -q 'Duplicate.*already exists'; then
 	    echo "---- Failed to add ingress rules to security group $SECURITY_GROUP_NAME (with id $securityGroupId)"
 	    exit 1
 	fi
     fi
-else
-    echo "---- Security group $SECURITY_GROUP_NAME already exists"
+    set -e
+fi
+
+if [[ -n "$SECURITY_GROUP_EGRESS_IP_PERMISSIONS" ]]; then
+    echo "---- Adding egress rules to security group: $SECURITY_GROUP_EGRESS_IP_PERMISSIONS"
+    # Unfortunately, we have no easy way of finding out if the security group already has this rule
+    set +e
+    error=$( aws ec2 authorize-security-group-ingress --group-id "$securityGroupId" --ip-permissions "$SECURITY_GROUP_EGRESS_IP_PERMISSIONS" )
+    if [[ $? -ne 0 ]]; then
+	if ! echo "$error" | grep -q 'Duplicate.*already exists'; then
+	    echo "---- Failed to add egress rules to security group $SECURITY_GROUP_NAME (with id $securityGroupId)"
+	    exit 1
+	fi
+    fi
+    set -e
 fi
 
 echo "-- Checking existing EC2 instances in security group $SECURITY_GROUP_NAME"
@@ -190,7 +178,7 @@ if [[ "$launchConfigurationExists" = false ]]; then
     echo "---- No launch configuration $AUTO_SCALING_GROUP_NAME exists, creating!"
     securityGroupId=$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
     applicationSecurityGroupId=$( aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
-    aws autoscaling create-launch-configuration --launch-configuration-name "$AUTO_SCALING_GROUP_NAME" --image-id "ami-5ec1673e" --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --security-groups "$securityGroupId" "$applicationSecurityGroupId" --iam-instance-profile "$EC2_IAM_PROFILE_NAME" --user-data "file://$BIN_DIR/../templates/service/ec2bootstrap.sh"
+    aws autoscaling create-launch-configuration --launch-configuration-name "$AUTO_SCALING_GROUP_NAME" --image-id "ami-5ec1673e" --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --security-groups "$securityGroupId" "$applicationSecurityGroupId" --iam-instance-profile "$EC2_IAM_PROFILE_NAME" --user-data "file://$serviceRoot/aws.config/ec2bootstrap.sh"
 else
     echo "---- Launch configuration $AUTO_SCALING_GROUP_NAME already exists!"
 fi

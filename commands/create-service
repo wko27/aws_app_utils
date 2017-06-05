@@ -31,6 +31,8 @@ fi
 applicationRoot=$( findApplicationRoot )
 serviceRoot="$applicationRoot/services/$service"
 
+loadApplicationProperties "$applicationRoot"
+
 if [[ -d "$serviceRoot" ]]; then
     echo "-- Found service already exists at $serviceRoot"
 elif [[ -f "$serviceRoot" ]]; then
@@ -40,12 +42,34 @@ else
     mkdir -p "$serviceRoot"
 fi
 
+templateDir=$( cd "$BIN_DIR/../templates/service"; pwd -P )
 if [[ -e "$serviceRoot/aws.properties" ]]; then
     echo "---- Found existing aws.properties in $serviceRoot"
 else
-    echo "---- Creating service's aws.properties"
-    cat "$BIN_DIR/../templates/service/aws.properties" | sed "s|__SERVICE__|$service|g" | sed "s|__APPLICATION_ROOT__|$applicationRoot|g" > "$serviceRoot/aws.properties"
-    cp -r "$BIN_DIR/../templates/service/aws.codedeploy" "$serviceRoot/"
+    echo "---- Creating $serviceRoot/aws.properties"
+    cat "$templateDir/aws.properties" | sed "s|__SERVICE__|$service|g" | sed "s|__APPLICATION_ROOT__|$applicationRoot|g" > "$serviceRoot/aws.properties"
+fi
+
+configDir="$serviceRoot/aws.config"
+if [[ -e "$configDir" ]]; then
+    echo "---- Found existing config dir at $configDir"
+else
+    echo "---- Creating $configDir"
+    mkdir -p "$configDir"
+fi
+
+if [[ -e "$configDir/codedeploy" ]]; then
+    echo "---- Found existing codedeploy"
+else
+    echo "---- Copying default codedeploy templates to $configDir"
+    cp -r "$templateDir/codedeploy" "$configDir/"
+fi
+
+if [[ -e "$configDir/ec2bootstrap.sh" ]]; then
+    echo "---- Found existing ec2bootstrap.sh"
+else
+    echo "---- Copying ec2 bootstrap script to $configDir"
+    cat "$templateDir/ec2bootstrap.sh" | perl -0pe "s|__EC2_USER_PUBLIC_KEYS__|$EC2_USER_PUBLIC_KEYS|" > "$configDir/ec2bootstrap.sh"
 fi
 
 affirm "-- Configure AWS (including an EC2 instance) now?"
