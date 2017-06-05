@@ -21,7 +21,7 @@ Helpful tools for quickly creating/prototyping simple applications on AWS
 ### FAQ
 
 * How do I specify the build directory
-  * (service directory)/aws.properties, modify the LOCAL_BULID_DIR
+  * (service directory)/aws.properties, modify the LOCAL_BUILD_DIR
 * Is this webscale?
   * No.
   * This is intended to be an easy bootstrap way to get simple services and lambdas running when prototyping an app
