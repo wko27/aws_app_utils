@@ -7,7 +7,7 @@ Helpful tools for quickly creating/prototyping simple applications on AWS
   * `export PATH=(full path to bin directory):$PATH`
   * Note this should be a full path (do not use ~)
   * For example, if I cloned this repository to /Users/bob/repos/aws_app_utils, then I would add this line
-    *`export PATH=/Users/bob/repos/aws_app_utils/bin:$PATH`
+    * `export PATH=/Users/bob/repos/aws_app_utils/bin:$PATH`
 
 ### Usage
 
