@@ -1,20 +1,18 @@
 #!/bin/bash
-# Create a new application
+# NAME
+#     create-app - Create a new application
+#
+# SYNOPSIS
+#     create-app
+#     create-app <app name>
+# 
+# DESCRIPTION
+#     Creates and configures a new application"
 
-BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
 set -e # Exit immediately if a command exits with a non-zero status.
 set -u # Treat unset variables as an error when substituting.
 
-help_text() {
-    echo "Usage:"
-    echo "  aws-app new-app"
-    echo "    - creates a new application (will prompt for name)"
-    echo "  aws-app new-app (application name)"
-    echo "    - creates a new application with the given name"
-    echo "  aws-app new-app help"
-    echo "    - displays this help text"
-    exit 0
-}
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
 
 if [[ $# -eq 0 ]]; then
     application=$( prompt "Application name: " )

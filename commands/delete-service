@@ -1,20 +1,17 @@
 #!/bin/bash
-# Deletes AWS resources for a service
+# NAME
+#     delete-service - Deletes AWS resources for a service
+#
+# SYNOPSIS
+#     delete-service
+#
+# DESCRIPTION
+#     Deletes all configurations/resources for the service in the current or given directory
+
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
 
 BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
-set -e # Abort on error
-set -u # Abort on undeclared variable
-
-help_text() {
-    echo "Usage:"
-    echo "  aws-app delete-service"
-    echo "    - deletes all configurations/resources for the service in the current directory"
-    echo "  aws-app delete-service (service)"
-    echo "    - deletes all configurations/resources for the given service"
-    echo "  aws-app delete-service help"
-    echo "    - show this help text"
-    exit 0
-}
 
 if [[ $# -eq 0 ]]; then
     serviceRoot=$( pwd -P )
@@ -28,6 +25,11 @@ fi
 service=$( basename "$serviceRoot" )
 loadServiceProperties "$serviceRoot"
 
+instances=$( aws ec2 describe-instances --filters "Name=instance.group-name,Values=$SECURITY_GROUP_NAME" | jq -r '[ .Reservations | .[] | .Instances | .[] | .InstanceId ] | join(" ")' )
+numInstances=$( echo "$instances" | tr ' ' '\n' | sed '/^$/d' | wc -l | tr -d ' ' )
+if [[ $numInstances -ne 0 ]]; then
+    echo "---- Found $numInstances EC2 instance(s): $instances"
+fi
 affirm "---- Delete all AWS resources for service $service at $serviceRoot"
 
 echo "-- Checking if auto scaling group $AUTO_SCALING_GROUP_NAME exists"
@@ -39,7 +41,7 @@ else
     echo "---- Setting min-size of auto scaling group $AUTO_SCALING_GROUP_NAME to 0"
     aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$AUTO_SCALING_GROUP_NAME" --min-size 0
     
-    echo "---- Finding instances attached to group"
+    echo "---- Finding instances attached to autoscaling group"
     instances=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$AUTO_SCALING_GROUP_NAME" | jq -r '.AutoScalingGroups | .[0] | .Instances | map( .InstanceId ) | join(" ")' )
     if [[ -n "$instances" ]]; then
 	echo "---- Detaching instances: $instances"
@@ -72,7 +74,7 @@ else
     aws autoscaling delete-launch-configuration --launch-configuration-name "$AUTO_SCALING_GROUP_NAME"
 fi
 
-echo "-- Checking EC2 instances attached to security group $SECURITY_GROUP_NAME"
+echo "-- Finding EC2 instances attached to security group $SECURITY_GROUP_NAME"
 instances=$( aws ec2 describe-instances --filters "Name=instance.group-name,Values=$SECURITY_GROUP_NAME" | jq -r '[ .Reservations | .[] | .Instances | .[] | .InstanceId ] | join(" ")' )
 if [[ -z "$instances" ]]; then
     echo "---- No EC2 instances found"

@@ -1,18 +1,17 @@
 #!/bin/bash
-# Configures AWS resources for an application
+# NAME
+#     configure-app - Configure AWS services for the application
+# 
+# SYNOPSIS
+#     configure-app
+#
+# DESCRIPTION
+#     Verifies and configures AWS entities for the application in the current directory
 
-BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
 set -e # Exit immediately if a command exits with a non-zero status.
 set -u # Treat unset variables as an error when substituting.
 
-help_text() {
-    echo "Usage:"
-    echo "  aws-app configure-app"
-    echo "    - verifies and configures AWS entities for the application in the current directory"
-    echo "  aws-app configure-app help"
-    echo "    - displays this help text"
-    exit 0
-}
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
 
 if [[ $# -eq 0 ]]; then
     applicationRoot=$( findApplicationRoot )

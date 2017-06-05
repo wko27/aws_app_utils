@@ -1,20 +1,20 @@
 #!/bin/bash
-# Configures AWS resources for a service
+# NAME
+#     configure-service - Configures AWS resources for a service
+#
+# SYNOPSIS
+#     configure-service
+#     configure-service <service>
+#
+# DESCRIPTION
+#     Verifies and configures AWS entities for the service in the current or given directory
+#     Any EC2 instances that belong to the service's security group will be attached to the autoscaling group
+#     If no EC2 instances nor autoscaling group are found, the newly created autoscaling group will be created desiring 1 instance
 
-BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
 set -e # Exit immediately if a command exits with a non-zero status.
 set -u # Treat unset variables as an error when substituting.
 
-help_text() {
-    echo "Usage:"
-    echo "  aws-app configure-service"
-    echo "    - verifies and configures AWS entities for the service in the current directory"
-    echo "  aws-app configure-service (path to service)"
-    echo "    - verifies and configures AWS entities for the given service"
-    echo "  aws-app configure-service help"
-    echo "    - show this help text"
-    exit 0
-}
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
 
 if [[ $# -eq 0 ]]; then
     serviceRoot=$( pwd -P )
@@ -28,8 +28,8 @@ fi
 service=$( basename "$serviceRoot" )
 loadServiceProperties "$serviceRoot"
 
-# Update an instance
-updateInstance() {
+# Check ssh access to an EC2 instance
+checkInstance() {
     instanceId="$1"
     echo "-- Obtaining public DNS of the instance"
     dnsName=$( aws ec2 describe-instances --instance-ids "$instanceId" | jq -r '.Reservations | .[0] | .Instances | .[0] | .NetworkInterfaces | .[0] | .Association | .PublicDnsName' )
@@ -261,8 +261,8 @@ done
 
 instances=$( aws ec2 describe-instances --filters "Name=instance.group-name,Values=$SECURITY_GROUP_NAME" | jq -r '[ .Reservations | .[] | .Instances | .[] | .InstanceId ] | join(" ")' )
 for instanceId in $instances; do
-    echo "-- Updating instance $instanceId"
-    updateInstance "$instanceId"
+    echo "-- Checking instance $instanceId"
+    checkInstance "$instanceId"
 done
 
 echo "-- Service $service is configured!"

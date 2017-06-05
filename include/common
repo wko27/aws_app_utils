@@ -5,6 +5,14 @@ if ! brew ls --versions awscli > /dev/null; then
     brew install awscli
 fi
 
+get_help() {
+
+}
+
+print_help() {
+    echo "$( get_help $0 )"
+}
+
 isExitSuccess() {
     set +e
     $@ > /dev/null 2>&1

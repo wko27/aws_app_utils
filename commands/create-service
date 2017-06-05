@@ -1,20 +1,18 @@
 #!/bin/bash
-# Create a new service (backed by an EC2 instance)
+# NAME
+#     create-service -  Create a new service
+#
+# SYNOPSIS
+#     create-service
+#     create-service <service name>
+#
+# DESCRIPTION
+#     Creates and configures a new service (with an EC2 instance, autoscaling group, security group, etc)
 
-BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
 set -e # Exit immediately if a command exits with a non-zero status.
 set -u # Treat unset variables as an error when substituting.
 
-help_text() {
-    echo "Usage:"
-    echo "  aws-app new-service"
-    echo "    - creates a new service (will prompt for name)"
-    echo "  aws-app new-service (service name)"
-    echo "    - creates a new service with the given name"
-    echo "  aws-app new-service help"
-    echo "    - show this help text"
-    exit 0
-}
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
 
 if [[ $# -eq 0 ]]; then
     service=$( prompt "Service name: " )

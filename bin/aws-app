@@ -2,6 +2,7 @@
 # Entry point to all aws-app functions
 
 COMMAND_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../commands"; pwd -P )"
+source "$COMMAND_DIR/../include/common"
 
 simple_help() {
 cat <<EOF
@@ -29,19 +30,28 @@ EOF
     find "$COMMAND_DIR" -type f -print0 | xargs -0 basename | sed 's/^/       /'
 }
 
+# Handle help
 if [[ $# -eq 0 ]]; then
-   simple_help
-   exit 0
+    simple_help
+    exit 0
 elif [[ $# -eq 1 && "$1" = "help" ]]; then
-   help_text | less
-   exit 0
+    help_text | less
+    exit 0
 fi
 
 command="$1"
 shift
-if [[ ! -e "$COMMAND_DIR"/"$command" ]]; then
+
+# Handle unknown command
+if [[ ! -e "$COMMAND_DIR/$command" ]]; then
     echo "Unknown aws-app command: $command"
     exit 1
+fi
+
+# Handle command help
+if [[ $# -gt 0 && ( "$1" = "-h" || "$1" = "-help" || "$1" = "help" ) ]]; then
+    sed '2,/^$/!d' "$COMMAND_DIR/$command" | sed 's/^#[[:space:]]\{0,1\}//' | less
+    exit 0
 fi
 
 exec "$COMMAND_DIR"/"$command" $@

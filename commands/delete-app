@@ -1,18 +1,18 @@
 #!/bin/bash
-# Deletes AWS resources for an application
+# NAME
+#     delete-app - Deletes AWS resources for an application
+#
+# SYNOPSIS
+#     delete-app
+#
+# DESCRIPTION
+#     Deletes all configurations/resources for the application in the current directory
+#     Note that all services should be deleted first
+
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
 
 BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")"; pwd -P )"; source "$BIN_DIR/../include/common"
-set -e # Abort on error
-set -u # Abort on undeclared variable
-
-help_text() {
-    echo "Usage:"
-    echo "  aws-app delete-app"
-    echo "    - deletes all configurations/resources for the application in the current directory"
-    echo "  aws-app delete-app help"
-    echo "    - displays this help text"
-    exit 0
-}
 
 if [[ $# -eq 1 ]]; then
     if [[ "$1" = "-h" || "$1" = "--help" || "$1" = "help" ]]; then
