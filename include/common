@@ -5,14 +5,6 @@ if ! brew ls --versions awscli > /dev/null; then
     brew install awscli
 fi
 
-get_help() {
-
-}
-
-print_help() {
-    echo "$( get_help $0 )"
-}
-
 isExitSuccess() {
     set +e
     $@ > /dev/null 2>&1
@@ -65,7 +57,7 @@ checkVariableSet() {
     fi
 }
 
-# Load values from the application-level aws.property
+# Load values from the app-aws.properties
 loadApplicationProperties() {
     applicationRoot="$1"
 
@@ -83,16 +75,16 @@ loadApplicationProperties() {
     checkVariableSet "DEFAULT_SECURITY_GROUP"
 }
 
-# Load values from the service-level aws.property (and its corresponding application-level aws.property)
+# Load values from the ec2-aws.properties (and its corresponding aws-aws.properties)
 loadServiceProperties() {
     serviceRoot="$1"
 
-    if [[ ! -e "$serviceRoot/aws.properties" ]]; then
-	echo "No aws.properties found in $serviceRoot"
+    if [[ ! -e "$serviceRoot/ec2-aws.properties" ]]; then
+	echo "No ec2-aws.properties found in $serviceRoot"
 	exit 1
     fi
     
-    source "$serviceRoot/aws.properties"
+    source "$serviceRoot/ec2-aws.properties"
     
     checkVariableSet "CODE_DEPLOY_APPLICATION_NAME"
     checkVariableSet "DEPLOYMENT_GROUP_NAME"
@@ -106,17 +98,15 @@ loadServiceProperties() {
     loadApplicationProperties "$APPLICATION_ROOT"
 }
 
-# Find the application root, i.e. the first ancestor directory containing an application-type aws.properties
+# Find the application root, i.e. the first ancestor directory containing an app-aws.properties
 # Prints the name or errors out if it can not be found
 findApplicationRoot() {
     current=$( pwd -P )
     while [[ "$current" != "/" ]]; do
 	awsProperties="$current/app-aws.properties"
 	if [[ -e "$awsProperties" ]]; then
-	    if grep -q "### application aws.properties" "$awsProperties"; then
-		echo "$current"
-		return 0
-	    fi
+	    echo "$current"
+	    return 0
 	fi
 	current=$( cd "$current/.." && pwd -P )
     done

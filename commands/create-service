@@ -41,11 +41,11 @@ else
 fi
 
 templateDir=$( cd "$BIN_DIR/../templates/service"; pwd -P )
-if [[ -e "$serviceRoot/aws.properties" ]]; then
-    echo "---- Found existing aws.properties in $serviceRoot"
+if [[ -e "$serviceRoot/ec2-aws.properties" ]]; then
+    echo "---- Found existing ec2-aws.properties in $serviceRoot"
 else
-    echo "---- Creating $serviceRoot/aws.properties"
-    cat "$templateDir/aws.properties" | sed "s|__SERVICE__|$service|g" | sed "s|__APPLICATION_ROOT__|$applicationRoot|g" > "$serviceRoot/aws.properties"
+    echo "---- Creating $serviceRoot/ec2-aws.properties"
+    cat "$templateDir/ec2-aws.properties" | sed "s|__SERVICE__|$service|g" | sed "s|__APPLICATION_ROOT__|$applicationRoot|g" > "$serviceRoot/ec2-aws.properties"
 fi
 
 configDir="$serviceRoot/aws.config"

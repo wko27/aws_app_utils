@@ -213,7 +213,6 @@ fi
 
 echo "-- Checking if instances are already assigned to auto scaling group $AUTO_SCALING_GROUP_NAME"
 assignedInstances=$( aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$AUTO_SCALING_GROUP_NAME" | jq '.AutoScalingGroups | .[0] | .Instances' )
-echo "-- Checking instances: $instances"
 for instanceId in $instances; do
     if echo "$assignedInstances" | grep -q "$instanceId"; then
 	echo "---- Instance $instanceId is already assigned to auto scaling group"
