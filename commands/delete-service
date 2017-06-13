@@ -146,11 +146,23 @@ fi
 #######################################################
 echo "-- Verifying all resources released"
 
-autoScalingGroupExists="$( aws autoscaling describe-auto-scaling-groups | jq '.AutoScalingGroups | any(.AutoScalingGroupName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
-if [[ "$autoScalingGroupExists" = "true" ]]; then
-    echo "---- Failed to delete auto scaling group $AUTO_SCALING_GROUP_NAME"
-    exit -1
-fi
+set +e
+for x in $( seq 1 3 ); do
+    autoScalingGroupExists="$( aws autoscaling describe-auto-scaling-groups | jq '.AutoScalingGroups | any(.AutoScalingGroupName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
+    if [[ "$autoScalingGroupExists" = "false" ]]; then
+	break
+    fi
+    
+    if [[ $x -eq 3 ]]; then
+	echo "---- Failed to delete auto scaling group $AUTO_SCALING_GROUP_NAME"
+	exit 1
+    fi
+    
+    echo "---- Re-checking if auto scaling group was deleted"
+done
+
+
+set -e
 
 launchConfigurationExists="$( aws autoscaling describe-launch-configurations | jq '.LaunchConfigurations | any(.LaunchConfigurationGroupName == "'"$AUTO_SCALING_GROUP_NAME"'")' )"
 if [[ "$launchConfigurationExists" = "true" ]]; then

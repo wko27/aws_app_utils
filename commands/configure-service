@@ -178,7 +178,21 @@ if [[ "$launchConfigurationExists" = false ]]; then
     echo "---- No launch configuration $AUTO_SCALING_GROUP_NAME exists, creating!"
     securityGroupId=$( aws ec2 describe-security-groups --group-names "$SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
     applicationSecurityGroupId=$( aws ec2 describe-security-groups --group-names "$APPLICATION_SECURITY_GROUP_NAME" | jq -r '.SecurityGroups | .[0] | .GroupId' )
-    aws autoscaling create-launch-configuration --launch-configuration-name "$AUTO_SCALING_GROUP_NAME" --image-id "ami-5ec1673e" --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --security-groups "$securityGroupId" "$applicationSecurityGroupId" --iam-instance-profile "$EC2_IAM_PROFILE_NAME" --user-data "file://$serviceRoot/aws.config/ec2bootstrap.sh"
+    # Unfortuantely, the create-launch-configuration call can sometimes fail sporadically
+    set +e
+    for x in $( seq 1 3 ); do
+	aws autoscaling create-launch-configuration --launch-configuration-name "$AUTO_SCALING_GROUP_NAME" --image-id "ami-5ec1673e" --instance-type t2.micro --key-name "$EC2_KEYPAIR_NAME" --security-groups "$securityGroupId" "$applicationSecurityGroupId" --iam-instance-profile "$EC2_IAM_PROFILE_NAME" --user-data "file://$serviceRoot/aws.config/ec2bootstrap.sh"
+	if [[ $? -eq 0 ]]; then
+	    break
+	fi
+	
+	if [[ $x -eq 3 ]]; then
+	    echo "---- Unable to create launch configuration!! Please check or attempt manually"
+	    exit 1
+	fi
+	echo "---- Re-attempting to create launch configuration"
+    done
+    set -e
 else
     echo "---- Launch configuration $AUTO_SCALING_GROUP_NAME already exists!"
 fi
